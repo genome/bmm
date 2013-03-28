@@ -1,0 +1,11 @@
+#!/bin/bash
+
+#auto update the build time
+grep -v "^Packaged:" bmm/DESCRIPTION >zz
+mv -f zz bmm/DESCRIPTION
+thedate=`date +"%F %r"`;
+echo "Packaged: $thedate; cmiller" >>bmm/DESCRIPTION
+
+
+version=$(grep "Version" bmm/DESCRIPTION | awk '{print $2}')
+R CMD build bmm && R CMD INSTALL bmm_$version.tar.gz
