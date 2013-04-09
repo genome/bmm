@@ -11,4 +11,6 @@ $ cd bmm/
 $ R CMD build bmm
 $ R CMD INSTALL bmm_0.2.0.tar.gz
 
-
+Usage
+---------------------------------
+See R docs for usage
