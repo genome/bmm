@@ -1242,7 +1242,7 @@ bmm.plot.2d <- function(X, mu, alpha, nu, beta, E.pi, r, title, xlab, ylab)
 
   # width = 1 std dev
   suppressPackageStartupMessages(library("NORMT3")) # for erf
-  width <- as.real(erf(1/sqrt(2)))  
+  width <- as.double(erf(1/sqrt(2)))  
  
   width <- sqrt(width)
 
