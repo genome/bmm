@@ -427,6 +427,7 @@ bmm <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alpha0, nu0, beta0, c0, 
         numeric.indices <- (1:N.c)
 
         E.pi <- E.pi[non.zero.indices]
+        E.lnpi <- E.lnpi[non.zero.indices]
 
         N.c <- length(E.pi)
         c <- c[non.zero.indices]
@@ -1158,6 +1159,42 @@ bmm.plot.1d <- function(X, mu, alpha, nu, beta, E.pi, r, title, xlab, ylab)
   return(g)
 } # End bmm.plot.1d
 
+my.ellipse <- function(hlaxa = 1, hlaxb = 1, theta = 0, xc = 0, yc = 0, newplot = F,npoints = 100, ...){
+  a <- seq(0, 2 * pi, length = npoints + 1)
+  x <- hlaxa * cos(a)
+  y <- hlaxb * sin(a)
+  alpha <- angle(x, y)
+  rad <- sqrt(x^2 + y^2)
+  xp <- rad * cos(alpha + theta) + xc
+  yp <- rad * sin(alpha + theta) + yc
+  return (cbind(data.frame(x=xp, y=yp)))
+}
+  
+angle <- function (x, y){
+  angle2 <- function(xy) {
+    x <- xy[1]
+    y <- xy[2]
+    if (x > 0) {
+      atan(y/x)
+    }else {
+      if (x < 0 & y != 0) {
+        atan(y/x) + sign(y) * pi
+      }else {
+        if (x < 0 & y == 0) {
+          pi
+        }else {
+          if (y != 0) {
+            (sign(y) * pi)/2
+          }else {
+            NA
+          }
+        }
+      }
+    }
+  }
+  apply(cbind(x, y), 1, angle2)
+}
+
 ####--------------------------------------------------------------
 ## bmm.plot.2d:  Plot data highlighted according to clustering
 ##
@@ -1203,42 +1240,6 @@ bmm.plot.2d <- function(X, mu, alpha, nu, beta, E.pi, r, title, xlab, ylab)
 {
   N <- dim(X)[1]
   N.c <- dim(mu)[2]
-
-  my.ellipse <- function(hlaxa = 1, hlaxb = 1, theta = 0, xc = 0, yc = 0, newplot = F,npoints = 100, ...){
-    a <- seq(0, 2 * pi, length = npoints + 1)
-    x <- hlaxa * cos(a)
-    y <- hlaxb * sin(a)
-    alpha <- angle(x, y)
-    rad <- sqrt(x^2 + y^2)
-    xp <- rad * cos(alpha + theta) + xc
-    yp <- rad * sin(alpha + theta) + yc
-    return (cbind(data.frame(x=xp, y=yp)))
-  }
-  
-  angle <- function (x, y){
-    angle2 <- function(xy) {
-      x <- xy[1]
-      y <- xy[2]
-      if (x > 0) {
-        atan(y/x)
-      }else {
-        if (x < 0 & y != 0) {
-          atan(y/x) + sign(y) * pi
-        }else {
-          if (x < 0 & y == 0) {
-            pi
-          }else {
-            if (y != 0) {
-              (sign(y) * pi)/2
-            }else {
-              NA
-            }
-          }
-        }
-      }
-    }
-    apply(cbind(x, y), 1, angle2)
-  }
 
   # width = 1 std dev
   suppressPackageStartupMessages(library("NORMT3")) # for erf
@@ -1322,3 +1323,969 @@ bmm.plot.2d <- function(X, mu, alpha, nu, beta, E.pi, r, title, xlab, ylab)
   return(g)
 
 } # End bmm.plot.2d
+
+## Begin binomial mixture model
+
+####--------------------------------------------------------------
+## binomial.bmm.fixed.num.components: Use a variational Bayesian approach to fit 
+## a mixture of Beta distributions to proportion data, without dropping
+## any components/clusters.  To instead automatically determine the number of
+## components, use bmm, which invokes this function.
+## This implements the derivations described in
+##
+## Bayesian Estimation of Beta Mixture Models with Variational
+## Inference.  Ma and Leijon.  IEEE Transactions on Pattern Analysis
+## and Machine Intelligence (2011) 33: 2160-2173.
+##
+## and
+##
+## Variational Learning for Finite Dirichlet Mixture Models and
+## Applications.  Fan, Bouguila, and Ziou.  IEEE Transactions on
+## Neural Networks and Learning Systems (2012) 23: 762-774.
+##
+## Notation and references here follow that used in Ma and Leijon.
+##
+## Inputs:
+## X:  an N x D matrix with rows holding the number of successes
+##              in each dimension.
+##              All entries are assumed to be counts--not proportions.
+## eta:  an N x D matrix with rows holding the number of trials
+##                in each dimension.
+##                All entries are assumed to be counts--not proportions.
+## N.c:  the number of components/clusters to attempt
+## r:  the N x N.c matrix of initial responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## a:  a N.c x D matrix holding the _initial_ values of the 
+##     shape parameters a for the beta prior distributions over the 
+##     mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## b:  a N.c x D matrix holding the _initial_ values of the 
+##     shape parameters b for the beta prior distributions over the 
+##     mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## alpha:  a vector with D components holding the _initial_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## a0, b0, alpha0:  the hyperparameters corresponding to the
+##                               above initial values (and with the same
+##                               respective matrix/vector dimensionality).
+## convergence.threshold:  minimum absolute difference between mixing
+##                         coefficient (expected) values across consecutive
+##                         iterations to reach converge.
+## max.iterations:  maximum number of iterations to attempt
+## verbose:  output progress in terms of mixing coefficient (expected) values
+##           if 1.
+## Outputs: a list with the following entries
+## retVal:  0 indicates successful convergence; -1 indicates a failure
+##          to converge.
+## a:  a N.c x D matrix holding the _converged final_ values of the 
+##     shape parameters a for the beta posterior distributions over the 
+##     mu parameters, i.e., Beta(mu[k,m]; a[k,m], b[k,m])  
+## b:  a N.c x D matrix holding the _converged final_ values of the 
+##     shape parameters b for the beta posterior distributions over the 
+##     mu parameters, i.e., Beta(mu[k,m]; a[k,m], b[k,m])  
+## alpha:  a vector with D components holding the _converged final_ values of 
+##         the parameters of the posterior Dirichlet distribution over the 
+##         mixing coefficients pi.  
+## r:  the N x N.c matrix of responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## num.iterations:  the number of iterations required to reach convergence.
+## ln.rho:  an N x N.c matrix holding the ln[rho], as defined in eqn (32).
+## E.lnpi:  the D-vector holding the values E[ln pi], defined following 
+##          eqn (51).
+## E.pi:  the D-vector holding the values E[pi], i.e., the expected values
+##        of the mixing coefficients, defined in eqn (53).
+
+binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b0, alpha0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = 0)
+{
+  N <- dim(X)[1]
+  D <- dim(X)[2]
+
+  E.pi.prev <- rep(0, N.c)
+  
+  iteration <- 0
+
+  # Apply variational bayesian approach to binomial mixture modeling
+  # until convergence
+
+    Nk <- colSums(r)
+    if (any(is.na(Nk))) {
+      print("Nk is NA")
+      print(Nk)
+      q(status=0)
+    }
+    
+    # Calculate xbar_km
+    Nk.xbar <- matrix(data = 0, nrow=N.c, ncol=D)
+    for(k in 1:N.c) {
+      for(m in 1:D) {
+        for(n in 1:N) {
+          Nk.xbar[k,m] <- Nk.xbar[k,m] + r[n,k] * X[n,m]
+        }
+      }
+    }
+    if (any(is.na(Nk.xbar))) {
+      print("Nk.xbar is NA")
+      print(Nk.xbar)
+      print("r")
+      print(r)
+      print("X")
+      print(X)
+      q(status=0)
+    }
+    
+    # Calculate etabar_km
+    Nk.etabar <- matrix(data = 0, nrow=N.c, ncol=D)
+    for(k in 1:N.c) {
+      for(m in 1:D) {
+        for(n in 1:N) {
+          Nk.etabar[k,m] <- Nk.etabar[k,m] + r[n,k] * eta[n,m]
+        }
+      }
+    }
+  
+    if (any(is.na(Nk.etabar))) {
+      print("Nk.etabar is NA")
+      print(Nk.etabar)
+      q(status=0)
+    }
+
+  lb.prev <- -Inf
+
+  while(TRUE) {  
+
+    # Loop:
+    #    (1) Update vars (a, b, alpha)
+
+    # Calculate alpha_k
+    alpha <- alpha0 + Nk
+    if (any(is.na(alpha))) {
+      print("alpha is NA")
+      print(alpha)
+      q(status=0)
+    }
+    
+    # Calculate a_km
+    # Calculate b_km
+    a <- matrix(data = 0, nrow=N.c, ncol=D)
+    b <- matrix(data = 0, nrow=N.c, ncol=D)  
+    for(k in 1:N.c) {
+      for(m in 1:D) {
+        a[k,m] <- ( a0[k,m] - 1 ) + Nk.xbar[k,m]
+        b[k,m] <- ( b0[k,m] - 1 ) + Nk.etabar[k,m] - Nk.xbar[k,m]        
+      }
+    }
+    if (any(is.na(a))) {
+      print("a is NA")
+      print(a)
+      q(status=0)
+    }
+   
+    if (any(is.na(b))) {
+      print("b is NA")
+      print(b)
+      q(status=0)
+    } 
+
+    # print(a / ( a + b ))
+
+    if ( any(a <= 0) ) {
+      print("a <= 0")
+      print(a)
+      print(Nk.xbar)
+      cat("iteration = ", iteration, "\n")
+      q(status=0)
+    }
+
+    if ( any(b <= 0) ) {
+      print("b <= 0")
+      q(status=0)
+    }
+
+    if ( any(alpha < 0) ) {
+      print("alpha < 0")
+      q(status=0)
+    }    
+    
+    #    (2) Compute expectations
+  
+    # Calculate E_mu[ln mu_km]
+    E.ln.mu <- digamma(a) - digamma(a + b)
+    if (any(is.na(E.ln.mu))) {
+      print("E.ln.mu is NA")
+      print(E.ln.mu)
+      print("a")
+      print(a)
+      print("b")
+      print(b)
+      q(status=0)
+    }
+  
+    # Calculate E_mu[ln ( 1 - mu_km )]
+    E.ln.one.minus.mu <- digamma(b) - digamma(a + b)
+    if (any(is.na(E.ln.one.minus.mu))) {
+      print("E.ln.one.minus.mu is NA")
+      print(E.ln.one.minus.mu)
+      q(status=0)
+    }
+    
+    # Calculate E_pi[ln pi_k]
+    E.lnpi <- digamma(alpha) - digamma(sum(alpha))
+    if (any(is.na(E.lnpi))) {
+      print("E.lnpi is NA")
+      print(E.lnpi)
+      q(status=0)
+    }
+
+    
+    #    (3) Compute responsibilities
+    
+    # Calculate responsibilities, E_Z[z_nk]
+    log.rho <- matrix(data = 0, nrow=N, ncol=N.c)
+    for(n in 1:N) {
+      for(k in 1:N.c) {
+        log.rho[n,k] <- E.lnpi[k]
+        for(m in 1:D) {
+          log.rho[n,k] <- log.rho[n,k] + ( lgamma(eta[n,m] + 1) - lgamma(eta[n,m] - X[n,m] + 1) - lgamma(X[n,m] + 1) ) + ( X[n,m] * E.ln.mu[k,m] ) + ( ( eta[n,m] - X[n,m] ) * E.ln.one.minus.mu[k,m] )        
+        }
+      }
+    }
+
+    if (any(is.na(log.rho))) {
+      print("log.rho is NA")
+      print(log.rho)
+      q(status=0)
+    }
+    
+    r <- matrix(data = 0, nrow=N, ncol=N.c)
+    for(n in 1:N) {
+      if(any(is.na(log.rho[n,]))) {
+        r[n,] <- rep(NA, N.c)
+        next
+      }
+          
+      row.sum <- log(sum(exp(log.rho[n,] - max(log.rho[n,])))) + max(log.rho[n,])
+      for(k in 1:N.c) { r[n,k] = exp(log.rho[n,k] - row.sum) }
+    }
+
+    if (any(is.na(r))) {
+      print("r is NA")
+      print(r)
+      q(status=0)
+    }
+    
+    #    (4) Compute statistics
+
+  
+    # Calculate N_k
+    r <- r + 10^-9
+
+    Nk <- colSums(r)
+    if (any(is.na(Nk))) {
+      print("Nk is NA")
+      print(Nk)
+      q(status=0)
+    }
+    
+    # Calculate xbar_km
+    Nk.xbar <- matrix(data = 0, nrow=N.c, ncol=D)
+    for(k in 1:N.c) {
+      for(m in 1:D) {
+        for(n in 1:N) {
+          Nk.xbar[k,m] <- Nk.xbar[k,m] + r[n,k] * X[n,m]
+        }
+      }
+    }
+    if (any(is.na(Nk.xbar))) {
+      print("Nk.xbar is NA")
+      print(Nk.xbar)
+      print("r")
+      print(r)
+      print("X")
+      print(X)
+      q(status=0)
+    }
+    
+    # Calculate etabar_km
+    Nk.etabar <- matrix(data = 0, nrow=N.c, ncol=D)
+    for(k in 1:N.c) {
+      for(m in 1:D) {
+        for(n in 1:N) {
+          Nk.etabar[k,m] <- Nk.etabar[k,m] + r[n,k] * eta[n,m]
+        }
+      }
+    }
+  
+    if (any(is.na(Nk.etabar))) {
+      print("Nk.etabar is NA")
+      print(Nk.etabar)
+      q(status=0)
+    }
+    
+    #    (5) Compute bound
+    
+    # Compute variational lower bound
+    E.ln.p.X.Z.mu <- 0
+    for(n in 1:N) {
+      for(k in 1:N.c) {
+        tmp <- 0
+        for(m in 1:D) {
+          tmp <- tmp + lgamma(eta[n,m] + 1) - lgamma(X[n,m] + 1) - lgamma(eta[n,m] - X[n,m] + 1) + X[n,m] * E.ln.mu[k,m] + ( eta[n,m] - X[n,m] ) * E.ln.one.minus.mu[k,m]
+        }
+        E.ln.p.X.Z.mu <- E.ln.p.X.Z.mu + tmp * r[n,k]
+      }
+    }
+
+    E.ln.p.Z.pi <- 0
+    for(n in 1:N) {
+      for(k in 1:N.c) {
+        E.ln.p.Z.pi <- E.ln.p.Z.pi + r[n,k] * E.lnpi[k]
+      }
+    }
+
+    E.ln.p.pi <- lgamma(sum(alpha0)) - sum(lgamma(alpha0))
+    for(k in 1:N.c) {
+      E.ln.p.pi <- E.ln.p.pi + ( alpha0[k] - 1 ) * E.lnpi[k]
+    }
+    
+    E.ln.p.mu <- 0
+    for(k in 1:N.c) {
+      for(m in 1:D) {
+        E.ln.p.mu <- E.ln.p.mu + lgamma(a0[k,m] + b0[k,m]) - lgamma(a0[k,m]) - lgamma(b0[k,m]) + ( a0[k,m] - 1 ) * E.ln.mu[k,m] + ( b0[k,m] - 1 ) * E.ln.one.minus.mu[k,m] 
+      }
+    }
+
+    E.ln.q.Z <- 0
+    for(n in 1:N) {
+      for(k in 1:N.c) {
+        if ( r[n,k] != 0 ) {
+          E.ln.q.Z <- E.ln.q.Z + r[n,k] * log(r[n,k])
+        }
+      }
+    }
+
+    E.ln.q.pi <- lgamma(sum(alpha)) - sum(lgamma(alpha))
+    for(k in 1:N.c) {
+      E.ln.q.pi <- E.ln.q.pi + ( alpha[k] - 1 ) * E.lnpi[k]
+    }
+    
+    E.ln.q.mu <- 0
+    for(k in 1:N.c) {
+      for(m in 1:D) {
+        E.ln.q.mu <- E.ln.q.mu + lgamma(a[k,m] + b[k,m]) - lgamma(a[k,m]) - lgamma(b[k,m]) + ( a[k,m] - 1 ) * E.ln.mu[k,m] + ( b[k,m] - 1 ) * E.ln.one.minus.mu[k,m] 
+      }
+    }
+
+    if (any(is.na(E.ln.p.X.Z.mu))) {
+      print("E.ln.p.X.Z.mu is NA")
+      q(status=0)
+    }
+
+    if (any(is.na(E.ln.p.Z.pi))) {
+      print("E.ln.p.Z.pi is NA")
+      q(status=0)
+    }
+
+    if (any(is.na(E.ln.p.pi))) {
+      print("E.ln.p.pi is NA")
+      q(status=0)
+    }
+
+    if (any(is.na(E.ln.p.mu))) {
+      print("E.ln.p.mu is NA")
+      q(status=0)
+    }
+
+    if (any(is.na(E.ln.q.Z))) {
+      print("E.ln.q.Z is NA")
+      q(status=0)
+    }
+
+    if (any(is.na(E.ln.q.pi))) {
+      print("E.ln.q.pi is NA")
+      q(status=0)
+    }
+
+    if (any(is.na(E.ln.q.mu))) {
+      print("E.ln.q.mu is NA")
+      q(status=0)
+    }
+
+    lb <- E.ln.p.X.Z.mu + E.ln.p.Z.pi + E.ln.p.pi + E.ln.p.mu - E.ln.q.Z - E.ln.q.pi - E.ln.q.mu 
+    
+    iteration <- iteration + 1
+    # if ( iteration > 100 ) { break }
+
+    # cat(lb, "\n")
+
+    E.pi <- alpha / sum(alpha)
+    cat("lb = ", lb, " pi = ", E.pi, "\n")
+
+    if ( lb.prev > lb ) {
+      cat(sprintf("lb decreased from %f to %f!\n", lb.prev, lb))
+      # q(status=0)
+    }
+    if ( abs( lb - lb.prev ) < convergence.threshold ) { break }
+
+    lb.prev <- lb
+
+  } # End inner while(TRUE)
+
+  retList <- list("retVal" = 0, "a" = a, "b" = b, "alpha" = alpha, "r" = r, "num.iterations" = iteration, "ln.rho" = log.rho, "E.lnpi" = E.lnpi, "E.pi" = E.pi)
+
+  return(retList)
+} # End binomial.bmm.fixed.num.components function
+
+####--------------------------------------------------------------
+## binomial.bmm: Use a variational Bayesian approach to fit a mixture of 
+## binomial distributions to count data.
+##
+## NB: Clustering is first run to convergence using 
+## binomial.bmm.fixed.num.components.
+## If any components have probability less than pi.threshold, they are
+## discarded and the clustering is run to convergence again.
+##
+##
+## Inputs:
+## successes:  an N x D matrix with rows holding the number of successes
+##              in each dimension.
+##              All entries are assumed to be counts--not proportions.
+## total.trials:  an N x D matrix with rows holding the number of trials
+##                in each dimension.
+##                All entries are assumed to be counts--not proportions.
+## N.c:  the number of components/clusters to attempt
+## r:  the N x N.c matrix of initial responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## mu:  a D x N.c matrix holding the _initial_ values of the 
+##      shape parameters for the gamma prior distributions over the 
+##      u parameters.  i.e., mu[d,n] is the shape parameter governing u[d,n].
+##      NB:  this is the initial value mu, which is updated upon iteration.
+##      It is not (necessarily) the same as the hyperparameter mu0, which
+##      is unchanged by iteration.
+##      Introduced in eqn (15).
+## alpha:  a D x N.c matrix holding the _initial_ values of the 
+##         rate (i.e., inverse scale) parameters for the gamma prior 
+##         distributions over the u parameters.  i.e., mu[d,n] is the rate
+##         parameter governing u[d,n]. Introduced in eqn (15).
+##         NB:  this is the initial value alpha, which is updated upon iteration.
+##         It is not (necessarily) the same as the hyperparameter alpha0, which
+##         is unchanged by iteration.
+## nu:  a D x N.c matrix holding the _initial_ values of the 
+##      shape parameters for the gamma prior distributions over the 
+##      v parameters.  i.e., nu[d,n] is the shape parameter governing v[d,n].
+##      Introduced in eqn (16).
+##      NB:  this is the initial value nu, which is updated upon iteration.
+##      It is not (necessarily) the same as the hyperparameter nu0, which
+##      is unchanged by iteration.
+## beta:  a D x N.c matrix holding the _initial_ values of the 
+##        rate (i.e., inverse scale) parameters for the gamma prior 
+##        distributions over the v parameters.  i.e., beta[d,n] is the rate
+##        parameter governing v[d,n]. Introduced in eqn (16).
+##        NB:  this is the initial value beta, which is updated upon iteration.
+##        It is not (necessarily) the same as the hyperparameter beta0, which
+##        is unchanged by iteration.
+## c:  a vector with D components holding the _initial_ values of the
+##     parameters of the Dirichlet distribution over the mixing 
+##     coefficients pi.  Introduced in eqn (19).
+##     NB: this is the initial value c, which is updated upon iteration.
+##     It is not (necessarily) the same as the hyperparameter c0, which 
+##     is unchanged by iteration.
+## mu0, alpha0, nu0, beta0, c0:  the hyperparameters corresponding to the
+##                               above initial values (and with the same
+##                               respective matrix/vector dimensionality).
+## convergence.threshold:  minimum absolute difference between mixing
+##                         coefficient (expected) values across consecutive
+##                         iterations to reach converge.
+## max.iterations:  maximum number of iterations to attempt
+## verbose:  output progress in terms of mixing coefficient (expected) values
+##           if 1.
+## pi.threshold:  discard any cluster with weight/mixing coefficient less
+##                than pi.threshold _following_ convergence.  
+## Outputs: a list with the following entries
+## retVal:  0 indicates successful convergence; -1 indicates a failure
+##          to converge.
+## mu:  a D x N.c matrix holding the _converged final_ values of the 
+##      shape parameters for the gamma prior distributions over the 
+##      u parameters.  i.e., mu[d,n] is the shape parameter governing u[d,n].
+##      Introduced in eqn (15).
+## alpha:  a D x N.c matrix holding the _converged final_ values of the 
+##         rate (i.e., inverse scale) parameters for the gamma prior 
+##         distributions over the u parameters.  i.e., mu[d,n] is the rate
+##         parameter governing u[d,n]. Introduced in eqn (15).
+## nu:  a D x N.c matrix holding the _converged final_ values of the 
+##      shape parameters for the gamma prior distributions over the 
+##      v parameters.  i.e., nu[d,n] is the shape parameter governing v[d,n].
+##      Introduced in eqn (16).
+## beta:  a D x N.c matrix holding the _converged final_ values of the 
+##        rate (i.e., inverse scale) parameters for the gamma prior 
+##        distributions over the v parameters.  i.e., beta[d,n] is the rate
+##        parameter governing v[d,n]. Introduced in eqn (16).
+## c:  a vector with D components holding the _converged final_ values of the
+##     parameters of the Dirichlet distribution over the mixing 
+##     coefficients pi.  Introduced in eqn (19).
+## r:  the N x N.c matrix of responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## num.iterations:  the number of iterations required to reach convergence.
+## ln.rho:  an N x N.c matrix holding the ln[rho], as defined in eqn (32).
+## E.lnpi:  the D-vector holding the values E[ln pi], defined following 
+##          eqn (51).
+## E.pi:  the D-vector holding the values E[pi], i.e., the expected values
+##        of the mixing coefficients, defined in eqn (53).
+
+binomial.bmm <- function(successes, total.trials, N.c, r, a, b, alpha, a0, b0, alpha0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = 0, pi.threshold = 10^-2)
+{
+
+  total.iterations <- 0 
+  D <- dim(successes)[2]
+
+  while(TRUE) {
+
+    if(verbose){
+      print(r)
+    }
+    
+    bmm.res <- binomial.bmm.fixed.num.components(successes, total.trials, N.c, r, a, b, alpha, a0, b0, alpha0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = verbose)
+    if(bmm.res$retVal != 0) {
+      cat("Failed to converge!\n")
+      q(status=-1)
+    }
+
+    a <- bmm.res$a
+    b <- bmm.res$b
+    alpha <- bmm.res$alpha
+    E.pi <- bmm.res$E.pi
+
+    total.iterations <- total.iterations + bmm.res$num.iterations
+
+    ln.rho <- bmm.res$ln.rho
+    E.lnpi <- bmm.res$E.lnpi
+
+    do.inner.iteration <- FALSE
+
+    apply.min.items.condition <- TRUE
+
+    if((apply.min.items.condition == TRUE) & (N.c > 1)) {
+      non.zero.indices <- E.pi > pi.threshold
+      N = length(successes[,1])
+      clusters <- rep(0, N)
+      for(n in 1:N) {
+        max.cluster <- 0
+        max.assignment <- -1
+        for(k in 1:N.c) {
+          if ( r[n,k] > max.assignment ) {
+            max.assignment <- r[n,k]
+            max.cluster <- k
+          }
+        }
+        clusters[n] <- max.cluster
+      }
+
+      if ( any(non.zero.indices==FALSE) ) {
+
+        do.inner.iteration <- TRUE
+
+        numeric.indices <- (1:N.c)
+
+        E.pi <- E.pi[non.zero.indices]
+        E.lnpi <- E.lnpi[non.zero.indices]
+
+        N.c <- length(E.pi)
+        r <- matrix(r[,non.zero.indices], nrow=N, ncol=N.c)
+        ln.rho <- matrix(ln.rho[,non.zero.indices], nrow=N, ncol=N.c)
+        # Need to renormalize r--do it gently.
+        for(n in 1:N) {
+           if(any(is.na(ln.rho[n,]))) {
+             r[n,] <- rep(NA, N.c)
+             next
+           }
+          
+           row.sum <- log(sum(exp(ln.rho[n,] - max(ln.rho[n,])))) + max(ln.rho[n,])
+           for(k in 1:N.c) { r[n,k] = exp(ln.rho[n,k] - row.sum) }
+        }
+        a <- matrix(a[non.zero.indices,], nrow=N.c, ncol=D)
+        b <- matrix(b[non.zero.indices,], nrow=N.c, ncol=D)
+        alpha <- alpha[non.zero.indices,drop=FALSE]
+        a0 <- matrix(a0[non.zero.indices,], nrow=N.c, ncol=D)
+        b0 <- matrix(b0[non.zero.indices,], nrow=N.c, ncol=D)
+        alpha0 <- alpha0[non.zero.indices,drop=FALSE]
+      }
+    } # End apply.min.items.condition
+
+    if(do.inner.iteration == FALSE) { break }
+
+  }
+
+  retList <- list("retVal" = 0, "a" = a, "b" = b, "alpha" = alpha, "r" = r, "num.iterations" = total.iterations, "ln.rho" = ln.rho, "E.lnpi" = E.lnpi, "E.pi" = E.pi)
+
+  return(retList)
+
+} # End binomial.bmm function
+
+
+####--------------------------------------------------------------
+## init.binomial.bmm.hyperparameters:  Initialize the binomial mixture model
+##                                     hyperparameters (to be passed to 
+##                                     binomial.bmm)
+##
+## NB:  This provides what should be a generally reasonable initialization of
+##      hyperparameters.  However, better results may be obtained by
+##      tuning these in an application-specific manner.
+##
+## Inputs:
+## successess:  an N x D matrix with rows holding the number of successes
+##              in each dimension.
+##              All entries are assumed to be counts--not proportions.
+## total.trials:  an N x D matrix with rows holding the number of trials
+##                in each dimension.
+##                All entries are assumed to be counts--not proportions.
+## N.c:  the number of components/clusters to attempt
+##
+## Outputs:
+## a0:  a N.c x D matrix holding the hyperparameter values of the 
+##      shape parameters a for the beta prior distributions over the 
+##      mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## b0:  a N.c x D matrix holding the hyperparameter values of the 
+##      shape parameters b for the beta prior distributions over the 
+##      mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## alpha0:  a vector with D components holding the hyperparameter values of the
+##          parameters of the Dirichlet distribution over the mixing 
+##          coefficients pi.  
+init.binomial.bmm.hyperparameters <- function(successes, total.trials, N.c) 
+{
+  D <- dim(successes)[2]
+
+  # Choose the initial parameters.  All priors are betas and/or dirichlets.
+  # Hence choosing prior parameters = 1 gives a completely flat prior.
+  a0 <- matrix(data=1, nrow=N.c, D)
+  b0 <- a0
+
+  alpha0 <- rep(0.001, N.c)
+
+  retList <- list("a0" = a0, "b0" = b0, "alpha0" = alpha0)
+  return(retList)
+
+} # End init.binomial.bmm.hyperparameters
+
+
+####--------------------------------------------------------------
+## init.binomial.bmm.parameters:  Initialize the binomial mixture model 
+##                                parameters (to be passed to binomial.bmm)
+##
+## Initialize parameters such that expected proportions have the values
+## determined by an initial k-means clustering.
+##
+## NB:  This provides what should be a generally reasonable initialization of
+##      hyperparameters.  However, better results may be obtained by
+##      tuning these in an application-specific manner.
+##
+##
+## Inputs:
+## successess:  an N x D matrix with rows holding the number of successes
+##              in each dimension.
+##              All entries are assumed to be counts--not proportions.
+## total.trials:  an N x D matrix with rows holding the number of trials
+##                in each dimension.
+##                All entries are assumed to be counts--not proportions.
+## N.c:  the number of components/clusters to attempt
+## a0:  a N.c x D matrix holding the hyperparameter values of the 
+##      shape parameters a for the beta prior distributions over the 
+##      mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## b0:  a N.c x D matrix holding the hyperparameter values of the 
+##      shape parameters b for the beta prior distributions over the 
+##      mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## alpha0:  a vector with D components holding the hyperparameter values of the
+##          parameters of the Dirichlet distribution over the mixing 
+##          coefficients pi.  
+##
+## Outputs:
+## a:  a N.c x D matrix holding the _initial_ values of the 
+##     shape parameters a for the beta prior distributions over the 
+##     mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## b:  a N.c x D matrix holding the _initial_ values of the 
+##     shape parameters b for the beta prior distributions over the 
+##     mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## alpha:  a vector with D components holding the _initial_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## r:  the N x N.c matrix of initial responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## kmeans.clusters:  an N-vector giving the assignment of each of the N
+##                   items to a cluster, as determined by kmeans.
+## kmeans.centers:  an N.c x D matrix holding the centers of the N.c
+##                  clusters/components determined by kmeans
+init.binomial.bmm.parameters <- function(successes, total.trials, N.c, a0, b0, alpha0) 
+{
+  N <- dim(successes)[1]
+  D <- dim(successes)[2]
+
+  # Initialize the responsibilities r_ni with K-means.
+  kmeans.out <- kmeans(successes/total.trials, N.c, nstart=1000)
+  kmeans.clusters <- kmeans.out$cluster
+  kmeans.centers <- kmeans.out$centers
+
+  r <- matrix(data=0, nrow=N, ncol=N.c)
+  for(i in 1:N) {
+    r[i,kmeans.clusters[i]]<- 1
+  }
+
+  # Set initial a and b (NB: not the prior hyperparameters) according
+  # to the means found by kmeans.  Keep mu and nu at their
+  # prior values.  To do so:
+  # E[proportion] = a / ( a + b )
+  # Var[proportion] = a b / [ ( a + b )^2 ( a + b + 1 ) ]
+
+  # Ignore the empirical std dev from kmeans and set the std dev to 0.3
+  std.dev <- 0.3
+  sigma2 <- std.dev^2
+
+  # These may be solved algebraically to give:
+  # a = b * mu / ( 1 - mu ) = b gamma   with gamma = mu / ( 1 - mu )
+  # b = ( mu^2 - sigma^2 * gamma ) / [ sigma^2 gamma ( 1 + gamma ) ]
+  mu <- kmeans.centers
+  gamma <- mu / ( 1 - mu )
+  b <- ( mu^2 - sigma2 * gamma ) / ( sigma2 * gamma * (1 + gamma) )
+  a <- b * gamma
+
+  alpha <- alpha0 + colSums(r, na.rm=TRUE) 
+
+  retList <- list("a" = a, "b" = b, "alpha" = alpha, "r" = r, "kmeans.centers" = kmeans.centers, "kmeans.clusters" = kmeans.clusters)
+  return(retList)
+
+}
+
+####--------------------------------------------------------------
+## sample.binomial.bmm.component.mean:  Sample (scalar) means in a particular 
+##                                      dimension from the posterior of a 
+##                                      particular component in the 
+##                                      binomial mixture model
+##
+## Inputs:  
+##
+## a:  a (scalar) shape parameters for the beta posterior distributions over a
+##     particular component's mu parameter (in a particular dimension),
+## b:  a (scalar) shape parameters for the beta posterior distributions over a
+##     particular component's mu parameter (in a particular dimension)
+## num.samples:  the number of samples to return
+##
+## Outputs:
+## 
+## a vector of length num.samples holding means sampled from the posterior
+## distribution of the component and dimension of the binomial mixture model
+## indicated by the input parameters.
+
+sample.binomial.bmm.component.mean <- function(a, b, num.samples) 
+{
+  # NB:  We could do these integrals analytically, but use this
+  # interface for consistency.
+
+  samples.means <- rbeta(num.samples, a, b)
+
+  return(samples.means)
+
+} # End sample.binomial.bmm.component.mean
+
+####--------------------------------------------------------------
+## binomial.bmm.narrowest.mean.interval.about.centers:  Return the narrowest (Bayesian
+##    credible) interval of the means that include the centers and
+##    a fixed proportion of the probability distribution of the means
+##    (e.g., .68 or .95).
+##
+## Inputs:  
+##
+## a:  a N.c x D matrix holding the _initial_ values of the 
+##     shape parameters a for the beta prior distributions over the 
+##     mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## b:  a N.c x D matrix holding the _initial_ values of the 
+##     shape parameters b for the beta prior distributions over the 
+##     mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## proportion:  the percentage of the distribution of each mean to include
+##              in the interval (e.g., .68 or .95)
+##
+## Outputs:
+## 
+## a list with values lb and ub, where each are D x N.c
+## matrices holding the respective lower or upper bounds of the intervals,
+## and centers, which is a D x N.c matrix holding the empirical means sampled
+## from the posterior distribution
+
+binomial.bmm.narrowest.mean.interval.about.centers <- function(a, b, proportion) 
+{
+
+  D <- dim(a)[2]
+  N.c <- dim(a)[1]
+      
+  num.samples <- 1000
+
+  lb <- matrix(data = 0, nrow=D, ncol=N.c)
+  ub <- matrix(data = 0, nrow=D, ncol=N.c)
+  centers <- matrix(data = 0, nrow=D, ncol=N.c)
+
+  for(i in 1:N.c){
+    for(l in 1:D){
+      samples.proportions <- sample.binomial.bmm.component.mean(a[i,l], b[i,l], num.samples)
+
+      samples.proportions <- sort(samples.proportions, decreasing=FALSE)
+  
+      centers[l,i] <- mean(samples.proportions)
+
+      bounds <- define.narrowest.interval.including.pt(samples.proportions, centers[l,i], proportion)
+      lb[l,i] <- bounds[1]
+      ub[l,i] <- bounds[2]
+    }
+  }
+  
+  retList <- list("lb" = lb, "ub" = ub, "centers" = centers)
+  return(retList)
+
+} # End binomial.bmm.narrowest.mean.interval.about.centers 
+
+####--------------------------------------------------------------
+## generate.count.data.set:  Generate a data set with clusters of 
+##    Binomial-derived counts
+##
+## Generate N.c clusters of successes, where each dimension is
+## independently generated by a binomial distribution.
+##
+## Inputs:
+##
+## N.c:  the number of clusters
+## N:  the total number of points (which will roughly proportionally
+##     allocated across the N.c clusters)
+## D:  the number of dimensions of the data set.
+##
+## Outputs:
+##
+## a list with slot "successes" holding an N x D matrix of successes (counts)
+## a slot "total.trials" holding an N x D matrix of total trials (counts)
+##
+
+generate.count.data.set <- function(N.c, N, D)
+{
+  m <- matrix(data = 0, nrow=N, ncol=D)
+  tot.counts <- 100
+  tot.count.matrix <- matrix(data = tot.counts, nrow=N, ncol=D)
+
+  num.items.per.cluster <- floor(N/N.c)
+  nxt.indx <- 1
+  u <- 0
+  v <- 0
+  for(i in 1:N.c) {
+    for(j in 1:D) {
+      # Generate a random center for this cluster in this dimension
+      u <- runif(1, min=10, max=1000)
+      v <- i*runif(1, min=10, max=1000)
+      m[nxt.indx:(nxt.indx+num.items.per.cluster-1),j] <- rbinom(num.items.per.cluster, size=tot.counts, prob=rbeta(1, u, v))
+    }
+    nxt.indx <- nxt.indx + num.items.per.cluster
+  }
+
+  # If N does not evenly divide N.c, generate the remaining points
+  if(nxt.indx <= N) {
+    for(j in 1:D) {
+      m[nxt.indx:(nxt.indx+(N-nxt.indx)),j] <- rbinom(N+1-nxt.indx, size=tot.counts, prob=rbeta(1, u, v))
+    }
+  }
+
+  retList <- list("successes" = m, "total.trials" = tot.count.matrix)
+  return(retList)
+}
+
+####--------------------------------------------------------------
+## binomial.bmm.plot.2d:  Plot data highlighted according to clustering
+##
+## Plot the data with each item's respective color/symbol indicating
+## its cluster.  Also display "1-sigma" contour intervals for the
+## standard error of the mean for the standard error.
+##
+## Inputs:
+## successess:  an N x D matrix with rows holding the number of successes
+##              in each dimension.
+##              All entries are assumed to be counts--not proportions.
+## total.trials:  an N x D matrix with rows holding the number of trials
+##                in each dimension.
+##                All entries are assumed to be counts--not proportions.
+## a:  a N.c x D matrix holding the values of the 
+##     shape parameters a for the beta posterior distributions over the 
+##     mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## b:  a N.c x D matrix holding the values of the 
+##     shape parameters b for the beta posterior distributions over the 
+##     mu parameters, i.e., Beta(mu[k,m]; a0[k,m], b0[k,m])  
+## r:  the N x N.c matrix of responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## title:  plot title
+## xlab:  x label
+## ylab:  y label
+##
+## Outputs:
+##
+## ggplot object displaying the clustered data and "1-sigma" contour intervals
+## for the standard error of the mean.
+
+binomial.bmm.plot.2d <- function(successes, total.trials, a, b, r, title, xlab, ylab)
+{
+  N <- dim(successes)[1]
+  N.c <- dim(a)[1]
+
+  X <- successes / total.trials
+
+  # width = 1 std dev
+  suppressPackageStartupMessages(library("NORMT3")) # for erf
+  width <- as.double(erf(1/sqrt(2)))  
+ 
+  width <- sqrt(width)
+
+  # Calculate standard error of the means
+  SEM.res <- binomial.bmm.narrowest.mean.interval.about.centers(a, b, width)
+  SEM.centers <- t(SEM.res$centers)
+  SEMs.lb <- t(SEM.res$lb)
+  SEMs.ub <- t(SEM.res$ub)
+
+  # Make sure none of the clusters = 0 or 1, which would be used for black.
+  # Let's reserve that for highlighting.
+
+  clusters <- rep(0, N)
+  for(n in 1:N) {
+    max.cluster <- 0
+    max.assignment <- -1
+    for(k in 1:N.c) {
+      if ( r[n,k] > max.assignment ) {
+        max.assignment <- r[n,k]
+        # + 2 ensures none of the clusters has number 0 or 1,
+        # which would make it black when cluster is used as colour
+        max.cluster <- ( k + 2 )
+      }
+    }
+    clusters[n] <- max.cluster
+  }
+
+  proportions <- data.frame(x=X[,1], y=X[,2], row.names=NULL, stringsAsFactors=NULL)
+
+  centers <- data.frame(x=SEM.centers[,1], y=SEM.centers[,2], row.names=NULL, stringsAsFactors=NULL)
+
+  g <- ggplot(data = proportions, aes(x=x, y=y)) + ggtitle(title) + xlab(xlab) + ylab(ylab) + geom_point(data = proportions, aes(x=x, y=y), shape=clusters, colour=clusters) + geom_point(data = centers, aes(x=x, y=y), size=3, colour='blue') 
+
+  g <- g + theme_bw() + theme(axis.line = theme_segment(colour = "black"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank()) 
+  
+  # Add the "1-sigma" contour intervals for the standard error _of the mean_
+  for(k in 1:N.c) {
+    # i.e., provide the 1-sigma confidence interval of q(mu_k) =
+    # \int q(mu_k, lambda_k) dlambda_k.
+   
+    xc <- SEMs.lb[k,1] + ((SEMs.ub[k,1] - SEMs.lb[k,1])/2)
+    yc <- SEMs.lb[k,2] + ((SEMs.ub[k,2] - SEMs.lb[k,2])/2)
+  
+    ell <- my.ellipse(hlaxa = ((SEMs.ub[k,1] - SEMs.lb[k,1])/2), hlaxb = ((SEMs.ub[k,2] - SEMs.lb[k,2])/2), xc = xc, yc = yc)
+  
+    df_ell <- cbind(data.frame(x=ell$x, y=ell$y))
+  
+    g <- g + geom_path(data=df_ell, aes(x=x,y=y), colour="blue", linetype=2)
+  }
+  
+  xmin <- -0.05
+  xmax <-  1.05
+
+  g <- g + coord_cartesian(xlim=c(xmin,xmax), ylim=c(xmin,xmax))
+
+  return(g)
+
+} # End binomial.bmm.plot.2d
+
+## End binomial mixture model
