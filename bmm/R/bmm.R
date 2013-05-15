@@ -940,7 +940,7 @@ bmm.narrowest.proportion.interval.about.centers <- function(mu, alpha, nu, beta,
 ##      a particular component's v parameter.
 ## beta:  a (scalar) rate (i.e., inverse scale) parameter for the gamma prior 
 ##         distribution over a particular component's v parameter.
-## pi:  a (scaler) mixing coefficient giving the weight of the component
+## pi:  a (scalar) mixing coefficient giving the weight of the component
 ## num.samples:  the number of samples to use in performing the numerical
 ##               evaluation of the predictive density
 ##
@@ -1406,47 +1406,32 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
   # Apply variational bayesian approach to binomial mixture modeling
   # until convergence
 
-    Nk <- colSums(r)
-    if (any(is.na(Nk))) {
-      print("Nk is NA")
-      print(Nk)
-      q(status=0)
-    }
+  Nk <- colSums(r)
+  if (any(is.na(Nk))) {
+    print("Nk is NA")
+    print(Nk)
+    q(status=-1)
+  }
     
-    # Calculate xbar_km
-    Nk.xbar <- matrix(data = 0, nrow=N.c, ncol=D)
-    for(k in 1:N.c) {
-      for(m in 1:D) {
-        for(n in 1:N) {
-          Nk.xbar[k,m] <- Nk.xbar[k,m] + r[n,k] * X[n,m]
-        }
-      }
-    }
-    if (any(is.na(Nk.xbar))) {
-      print("Nk.xbar is NA")
-      print(Nk.xbar)
-      print("r")
-      print(r)
-      print("X")
-      print(X)
-      q(status=0)
-    }
+  # Calculate xbar_km
+  Nk.xbar <- t(r) %*% X
+  if (any(is.na(Nk.xbar))) {
+    print("Nk.xbar is NA")
+    print(Nk.xbar)
+    print("r")
+    print(r)
+    print("X")
+    print(X)
+    q(status=-1)
+  }
     
-    # Calculate etabar_km
-    Nk.etabar <- matrix(data = 0, nrow=N.c, ncol=D)
-    for(k in 1:N.c) {
-      for(m in 1:D) {
-        for(n in 1:N) {
-          Nk.etabar[k,m] <- Nk.etabar[k,m] + r[n,k] * eta[n,m]
-        }
-      }
-    }
-  
-    if (any(is.na(Nk.etabar))) {
-      print("Nk.etabar is NA")
-      print(Nk.etabar)
-      q(status=0)
-    }
+  # Calculate etabar_km
+  Nk.etabar <- t(r) %*% eta
+  if (any(is.na(Nk.etabar))) {
+    print("Nk.etabar is NA")
+    print(Nk.etabar)
+    q(status=-1)
+  }
 
   lb.prev <- -Inf
 
@@ -1460,49 +1445,42 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     if (any(is.na(alpha))) {
       print("alpha is NA")
       print(alpha)
-      q(status=0)
+      q(status=-1)
     }
     
     # Calculate a_km
     # Calculate b_km
-    a <- matrix(data = 0, nrow=N.c, ncol=D)
-    b <- matrix(data = 0, nrow=N.c, ncol=D)  
-    for(k in 1:N.c) {
-      for(m in 1:D) {
-        a[k,m] <- ( a0[k,m] - 1 ) + Nk.xbar[k,m]
-        b[k,m] <- ( b0[k,m] - 1 ) + Nk.etabar[k,m] - Nk.xbar[k,m]        
-      }
-    }
+    a <- ( a0 - 1 ) + Nk.xbar
+    b <- ( b0 - 1 ) + Nk.etabar - Nk.xbar
     if (any(is.na(a))) {
       print("a is NA")
       print(a)
-      q(status=0)
+      q(status=-1)
     }
    
     if (any(is.na(b))) {
       print("b is NA")
       print(b)
-      q(status=0)
+      q(status=-1)
     } 
-
-    # print(a / ( a + b ))
 
     if ( any(a <= 0) ) {
       print("a <= 0")
       print(a)
-      print(Nk.xbar)
-      cat("iteration = ", iteration, "\n")
-      q(status=0)
+      #print(Nk.xbar)
+      #print(r)
+      print(alpha/sum(alpha))
+      q(status=-1)
     }
 
     if ( any(b <= 0) ) {
       print("b <= 0")
-      q(status=0)
+      q(status=-1)
     }
 
     if ( any(alpha < 0) ) {
       print("alpha < 0")
-      q(status=0)
+      q(status=-1)
     }    
     
     #    (2) Compute expectations
@@ -1516,7 +1494,7 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
       print(a)
       print("b")
       print(b)
-      q(status=0)
+      q(status=-1)
     }
   
     # Calculate E_mu[ln ( 1 - mu_km )]
@@ -1524,7 +1502,7 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     if (any(is.na(E.ln.one.minus.mu))) {
       print("E.ln.one.minus.mu is NA")
       print(E.ln.one.minus.mu)
-      q(status=0)
+      q(status=-1)
     }
     
     # Calculate E_pi[ln pi_k]
@@ -1532,44 +1510,40 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     if (any(is.na(E.lnpi))) {
       print("E.lnpi is NA")
       print(E.lnpi)
-      q(status=0)
+      q(status=-1)
     }
 
     
     #    (3) Compute responsibilities
     
     # Calculate responsibilities, E_Z[z_nk]
-    log.rho <- matrix(data = 0, nrow=N, ncol=N.c)
-    for(n in 1:N) {
-      for(k in 1:N.c) {
-        log.rho[n,k] <- E.lnpi[k]
-        for(m in 1:D) {
-          log.rho[n,k] <- log.rho[n,k] + ( lgamma(eta[n,m] + 1) - lgamma(eta[n,m] - X[n,m] + 1) - lgamma(X[n,m] + 1) ) + ( X[n,m] * E.ln.mu[k,m] ) + ( ( eta[n,m] - X[n,m] ) * E.ln.one.minus.mu[k,m] )        
-        }
-      }
+
+
+    one.matrix <- matrix(data=1, nrow=D, ncol=N.c)
+    
+    ln.rho <- matrix(data=E.lnpi, nrow=N, ncol=N.c, byrow=TRUE)
+    ln.rho <- ln.rho + X %*% t(E.ln.mu) + eta %*% t(E.ln.one.minus.mu) - X %*% t(E.ln.one.minus.mu) 
+    ln.rho <- ln.rho + ( lgamma(eta + 1) %*% one.matrix ) - ( lgamma(eta - X + 1) %*% one.matrix ) - ( lgamma(X + 1) %*% one.matrix )
+    if (any(is.na(ln.rho))) {
+      print("ln.rho is NA")
+      print(ln.rho)
+      q(status=-1)
     }
 
-    if (any(is.na(log.rho))) {
-      print("log.rho is NA")
-      print(log.rho)
-      q(status=0)
-    }
-    
     r <- matrix(data = 0, nrow=N, ncol=N.c)
     for(n in 1:N) {
-      if(any(is.na(log.rho[n,]))) {
+      if(any(is.na(ln.rho[n,]))) {
         r[n,] <- rep(NA, N.c)
         next
       }
-          
-      row.sum <- log(sum(exp(log.rho[n,] - max(log.rho[n,])))) + max(log.rho[n,])
-      for(k in 1:N.c) { r[n,k] = exp(log.rho[n,k] - row.sum) }
+      row.sum <- log(sum(exp(ln.rho[n,] - max(ln.rho[n,])))) + max(ln.rho[n,], na.rm=TRUE)
+      for(k in 1:N.c) { r[n,k] = exp(ln.rho[n,k] - row.sum) }
     }
 
     if (any(is.na(r))) {
       print("r is NA")
       print(r)
-      q(status=0)
+      q(status=-1)
     }
     
     #    (4) Compute statistics
@@ -1582,18 +1556,11 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     if (any(is.na(Nk))) {
       print("Nk is NA")
       print(Nk)
-      q(status=0)
+      q(status=-1)
     }
     
     # Calculate xbar_km
-    Nk.xbar <- matrix(data = 0, nrow=N.c, ncol=D)
-    for(k in 1:N.c) {
-      for(m in 1:D) {
-        for(n in 1:N) {
-          Nk.xbar[k,m] <- Nk.xbar[k,m] + r[n,k] * X[n,m]
-        }
-      }
-    }
+    Nk.xbar <- t(r) %*% X
     if (any(is.na(Nk.xbar))) {
       print("Nk.xbar is NA")
       print(Nk.xbar)
@@ -1601,57 +1568,30 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
       print(r)
       print("X")
       print(X)
-      q(status=0)
+      q(status=-1)
     }
     
     # Calculate etabar_km
-    Nk.etabar <- matrix(data = 0, nrow=N.c, ncol=D)
-    for(k in 1:N.c) {
-      for(m in 1:D) {
-        for(n in 1:N) {
-          Nk.etabar[k,m] <- Nk.etabar[k,m] + r[n,k] * eta[n,m]
-        }
-      }
-    }
-  
+    Nk.etabar <- t(r) %*% eta
     if (any(is.na(Nk.etabar))) {
       print("Nk.etabar is NA")
       print(Nk.etabar)
-      q(status=0)
+      q(status=-1)
     }
     
     #    (5) Compute bound
     
     # Compute variational lower bound
-    E.ln.p.X.Z.mu <- 0
-    for(n in 1:N) {
-      for(k in 1:N.c) {
-        tmp <- 0
-        for(m in 1:D) {
-          tmp <- tmp + lgamma(eta[n,m] + 1) - lgamma(X[n,m] + 1) - lgamma(eta[n,m] - X[n,m] + 1) + X[n,m] * E.ln.mu[k,m] + ( eta[n,m] - X[n,m] ) * E.ln.one.minus.mu[k,m]
-        }
-        E.ln.p.X.Z.mu <- E.ln.p.X.Z.mu + tmp * r[n,k]
-      }
-    }
+    tmp.mat <- lgamma(eta + 1) - lgamma(X + 1) - lgamma(eta - X + 1)
+    # NB:  last two terms are element-wise multiplication by r, not
+    # matrix-matrix multiplication
+    E.ln.p.X.Z.mu <- sum(t(tmp.mat) %*% r) + sum((X %*% t(E.ln.mu)) * r) + sum(((eta - X) %*% t(E.ln.one.minus.mu)) * r)
 
-    E.ln.p.Z.pi <- 0
-    for(n in 1:N) {
-      for(k in 1:N.c) {
-        E.ln.p.Z.pi <- E.ln.p.Z.pi + r[n,k] * E.lnpi[k]
-      }
-    }
+    E.ln.p.Z.pi <- sum(r %*% E.lnpi)
 
-    E.ln.p.pi <- lgamma(sum(alpha0)) - sum(lgamma(alpha0))
-    for(k in 1:N.c) {
-      E.ln.p.pi <- E.ln.p.pi + ( alpha0[k] - 1 ) * E.lnpi[k]
-    }
+    E.ln.p.pi <- lgamma(sum(alpha0)) - sum(lgamma(alpha0)) + sum( (alpha0 - 1) * E.lnpi )
     
-    E.ln.p.mu <- 0
-    for(k in 1:N.c) {
-      for(m in 1:D) {
-        E.ln.p.mu <- E.ln.p.mu + lgamma(a0[k,m] + b0[k,m]) - lgamma(a0[k,m]) - lgamma(b0[k,m]) + ( a0[k,m] - 1 ) * E.ln.mu[k,m] + ( b0[k,m] - 1 ) * E.ln.one.minus.mu[k,m] 
-      }
-    }
+    E.ln.p.mu <- sum( (lgamma(a0 + b0)) - (lgamma(a0)) - (lgamma(b0)) + ((a0 - 1) * E.ln.mu) + ((b0-1) * E.ln.one.minus.mu) )
 
     E.ln.q.Z <- 0
     for(n in 1:N) {
@@ -1662,51 +1602,43 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
       }
     }
 
-    E.ln.q.pi <- lgamma(sum(alpha)) - sum(lgamma(alpha))
-    for(k in 1:N.c) {
-      E.ln.q.pi <- E.ln.q.pi + ( alpha[k] - 1 ) * E.lnpi[k]
-    }
+    E.ln.q.pi <- lgamma(sum(alpha)) - sum(lgamma(alpha)) + sum((alpha - 1)*E.lnpi)
     
-    E.ln.q.mu <- 0
-    for(k in 1:N.c) {
-      for(m in 1:D) {
-        E.ln.q.mu <- E.ln.q.mu + lgamma(a[k,m] + b[k,m]) - lgamma(a[k,m]) - lgamma(b[k,m]) + ( a[k,m] - 1 ) * E.ln.mu[k,m] + ( b[k,m] - 1 ) * E.ln.one.minus.mu[k,m] 
-      }
-    }
+    E.ln.q.mu <- sum( lgamma(a+b) - lgamma(a) - lgamma(b) + ((a-1)*E.ln.mu) + ((b-1)*E.ln.one.minus.mu) )
 
     if (any(is.na(E.ln.p.X.Z.mu))) {
       print("E.ln.p.X.Z.mu is NA")
-      q(status=0)
+      q(status=-1)
     }
 
     if (any(is.na(E.ln.p.Z.pi))) {
       print("E.ln.p.Z.pi is NA")
-      q(status=0)
+      q(status=-1)
     }
 
     if (any(is.na(E.ln.p.pi))) {
       print("E.ln.p.pi is NA")
-      q(status=0)
+      q(status=-1)
     }
 
     if (any(is.na(E.ln.p.mu))) {
       print("E.ln.p.mu is NA")
-      q(status=0)
+      q(status=-1)
     }
 
     if (any(is.na(E.ln.q.Z))) {
       print("E.ln.q.Z is NA")
-      q(status=0)
+      q(status=-1)
     }
 
     if (any(is.na(E.ln.q.pi))) {
       print("E.ln.q.pi is NA")
-      q(status=0)
+      q(status=-1)
     }
 
     if (any(is.na(E.ln.q.mu))) {
       print("E.ln.q.mu is NA")
-      q(status=0)
+      q(status=-1)
     }
 
     lb <- E.ln.p.X.Z.mu + E.ln.p.Z.pi + E.ln.p.pi + E.ln.p.mu - E.ln.q.Z - E.ln.q.pi - E.ln.q.mu 
@@ -1717,19 +1649,21 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     # cat(lb, "\n")
 
     E.pi <- alpha / sum(alpha)
-    cat("lb = ", lb, " pi = ", E.pi, "\n")
-
+    if(verbose) {
+      cat("lb = ", lb, " pi = ", E.pi, "\n")
+    }
+    
     if ( lb.prev > lb ) {
       cat(sprintf("lb decreased from %f to %f!\n", lb.prev, lb))
-      # q(status=0)
+      # q(status=-1)
     }
-    if ( abs( lb - lb.prev ) < convergence.threshold ) { break }
+    if ( abs( ( lb - lb.prev ) / lb ) < convergence.threshold ) { break }
 
     lb.prev <- lb
 
   } # End inner while(TRUE)
 
-  retList <- list("retVal" = 0, "a" = a, "b" = b, "alpha" = alpha, "r" = r, "num.iterations" = iteration, "ln.rho" = log.rho, "E.lnpi" = E.lnpi, "E.pi" = E.pi)
+  retList <- list("retVal" = 0, "a" = a, "b" = b, "alpha" = alpha, "r" = r, "num.iterations" = iteration, "ln.rho" = ln.rho, "E.lnpi" = E.lnpi, "E.pi" = E.pi)
 
   return(retList)
 } # End binomial.bmm.fixed.num.components function
@@ -2136,6 +2070,61 @@ binomial.bmm.narrowest.mean.interval.about.centers <- function(a, b, proportion)
   return(retList)
 
 } # End binomial.bmm.narrowest.mean.interval.about.centers 
+
+####--------------------------------------------------------------
+## binomial.bmm.component.posterior.predictive.density: Calculate the posterior
+##   predictive density in a single dimension for a single component.
+##
+## Inputs:
+##
+## x:  the integer number of successes at which to evaluate the posterior
+##     predictive density
+## eta:  the integer total number of trials at which to evaluate the posterior
+##     predictive density
+## a:  a (scalar) shape parameter of the Beta distribution, i.e.,
+##     Beta(x; a, b)
+## b:  a (scalar) shape parameter of the Beta distribution, i.e.,
+##     Beta(x; a, b)
+## pi:  a (scaler) mixing coefficient giving the weight of the component
+## Outputs:
+##
+## the posterior preditive density at x for the specified component
+
+binomial.bmm.component.posterior.predictive.density <- function(x, eta, a, b, pi)
+{
+  y <- pi * choose(eta, x) * exp(lbeta(x + a, eta - x + b) - lbeta(a, b))
+  return(y)
+}
+
+####--------------------------------------------------------------
+## binomial.bmm.posterior.predictive.density: Calculate the posterior
+##   predictive density in a single dimension across all components
+##
+## Inputs:
+##
+## x:  the integer number of successes at which to evaluate the posterior
+##     predictive density
+## eta:  the integer total number of trials at which to evaluate the posterior
+##     predictive density
+## a:  an N.c vector holding the shape parameter for each of the N.c
+##     components
+## b:  an N.c vector holding the shape parameter for each of the N.c
+##     components
+## pi:  an N.c vector holding the mixing coefficients giving the weight 
+##      of each of the N.c components
+## Outputs:
+##
+## the posterior preditive density at x summed across all components
+
+binomial.bmm.posterior.predictive.density <- function(x, eta, a, b, pi)
+{
+  N.c <- length(mu)
+  y <- 0
+  for(k in 1:N.c) {
+    y <- y + binomial.bmm.component.posterior.predictive.density(x, eta, a, b, pi)
+  }
+  return(y)
+}
 
 ####--------------------------------------------------------------
 ## generate.count.data.set:  Generate a data set with clusters of 
