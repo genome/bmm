@@ -1,4 +1,4 @@
-library(ggplot2)
+suppressPackageStartupMessages(library(ggplot2))
 
 ####--------------------------------------------------------------
 ## bmm.fixed.num.components: Use a variational Bayesian approach to fit 
@@ -996,7 +996,7 @@ bmm.posterior.predictive.density <- function(x, mu, alpha, nu, beta, pi, num.sam
   N.c <- length(mu)
   y <- 0
   for(k in 1:N.c) {
-    y <- y + bmm.component.posterior.predictive.density(x, mu, alpha, nu, beta, pi, num.samples)
+    y <- y + bmm.component.posterior.predictive.density(x, mu[k], alpha[k], nu[k], beta[k], pi[k], num.samples)
   }
   return(y)
 }
@@ -1328,22 +1328,9 @@ bmm.plot.2d <- function(X, mu, alpha, nu, beta, E.pi, r, title, xlab, ylab)
 
 ####--------------------------------------------------------------
 ## binomial.bmm.fixed.num.components: Use a variational Bayesian approach to fit 
-## a mixture of Beta distributions to proportion data, without dropping
+## a mixture of binomial distributions to proportion data, without dropping
 ## any components/clusters.  To instead automatically determine the number of
-## components, use bmm, which invokes this function.
-## This implements the derivations described in
-##
-## Bayesian Estimation of Beta Mixture Models with Variational
-## Inference.  Ma and Leijon.  IEEE Transactions on Pattern Analysis
-## and Machine Intelligence (2011) 33: 2160-2173.
-##
-## and
-##
-## Variational Learning for Finite Dirichlet Mixture Models and
-## Applications.  Fan, Bouguila, and Ziou.  IEEE Transactions on
-## Neural Networks and Learning Systems (2012) 23: 762-774.
-##
-## Notation and references here follow that used in Ma and Leijon.
+## components, use binomial.bmm, which invokes this function.
 ##
 ## Inputs:
 ## X:  an N x D matrix with rows holding the number of successes
@@ -2121,7 +2108,7 @@ binomial.bmm.posterior.predictive.density <- function(x, eta, a, b, pi)
   N.c <- length(mu)
   y <- 0
   for(k in 1:N.c) {
-    y <- y + binomial.bmm.component.posterior.predictive.density(x, eta, a, b, pi)
+    y <- y + binomial.bmm.component.posterior.predictive.density(x, eta, a[k], b[k], pi[k])
   }
   return(y)
 }
@@ -2278,3 +2265,1166 @@ binomial.bmm.plot.2d <- function(successes, total.trials, a, b, r, title, xlab, 
 } # End binomial.bmm.plot.2d
 
 ## End binomial mixture model
+
+
+
+## Begin gaussian mixture model
+
+####--------------------------------------------------------------
+## gaussian.bmm.fixed.num.components: Use a variational Bayesian approach to fit 
+## a mixture of gaussian distributions to proportion data, without dropping
+## any components/clusters.  To instead automatically determine the number of
+## components, use gaussian.bmm, which invokes this function.
+## This implements the derivations described in
+##
+## Pattern Recognition and Machine Learning
+## Christopher M. Bishop
+##
+## Inputs:
+## X:  an N x D matrix with rows being the items to cluster.
+##     All entries are assumed to be proportions (i.e., between 0 and 1).
+##     Notice that there are no summation restrictions--i.e., proportions
+##     do not sum to unity across an item's dimensions.
+## N.c:  the number of components/clusters to attempt
+## r:  the N x N.c matrix of initial responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## m:  a N.c x D matrix holding the _initial_ centers of the gaussians.
+## alpha:  a vector with D components holding the _initial_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _initial_ values that scale the precision
+## nu:  a D-vector holding the _initial_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _initial_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## m0, alpha0, beta0, nu0, W0:  the hyperparameters corresponding to the
+##                              above initial values (and with the same
+##                              respective matrix/vector dimensionality).
+## convergence.threshold:  minimum absolute relative difference between 
+##                         variational lower bounds across consecutive
+##                         iterations to reach converge.
+## max.iterations:  maximum number of iterations to attempt
+## verbose:  output progress in terms of mixing coefficient (expected) values
+##           if 1.
+## Outputs: a list with the following entries
+## retVal:  0 indicates successful convergence; -1 indicates a failure
+##          to converge.
+## m:  a N.c x D matrix holding the _converged_ centers of the gaussians.
+## alpha:  a vector with D components holding the _converged_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _converged_ values that scale the precision
+## nu:  a D-vector holding the _converged_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _converged_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## r:  the N x N.c matrix of responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## num.iterations:  the number of iterations required to reach convergence.
+## ln.rho:  an N x N.c matrix holding the ln[rho], as defined in eqn (32).
+## E.lnpi:  the D-vector holding the values E[ln pi]
+
+
+gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, m0, alpha0, beta0, nu0, W0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = 0)
+{
+  N <- dim(X)[1]
+  D <- dim(X)[2]
+
+  E.pi.prev <- rep(0, N.c)
+
+  identity.matrix <- matrix(data=0, nrow=D, ncol=D)
+  for(d in 1:D) {
+    identity.matrix[d,d] <- 1
+  }
+
+  # suppressPackageStartupMessages(library("Matrix")) # for lu
+  
+  W0inv <- W0
+  for(k in 1:N.c) {
+    # OLD WAY (is best?)
+    W0inv[[k]] <- solve(W0[[k]])
+    # Take the inverse of W0 by first doing an LU decomposition ...
+    #W0.lu <- lu(W0[[k]])
+    # ... and using that to define the inverse
+    #W0inv[[k]] <- as.matrix(solve(W0.lu))
+    delta <- 10^-5    
+    if ( any(abs( ( W0[[k]] %*% W0inv[[k]] ) - identity.matrix ) >= delta ) ) {
+      cat("W0: \n")
+      print(W0[[k]])
+      cat("W0inv: \n")
+      print(W0inv[[k]])
+      q(status=-1)
+    }
+  }
+
+  # Bishop 10.51
+  Nk <- colSums(r)
+
+  if ( any(Nk <= 0) ) {
+    print("Die!\n")
+    q(status=-1)
+  }
+
+  # Bishop 10.52
+  xbar <- matrix(data=0, nrow=N.c, ncol=D)
+  for(k in 1:N.c) {
+    if ( Nk[k] != 0.0 ) {
+      xbar[k,] <- ( 1 / Nk[k] ) * t(X) %*% r[,k]
+    }
+  }
+
+  # Bishop 10.53
+  Sk <- list(length=N.c)
+  for(k in 1:N.c) {
+    Sk[[k]] <- matrix(data=0, nrow=D, ncol=D)
+    if ( Nk[k] != 0.0 ) {
+      for(n in 1:N) {
+        mean.vec <- X[n,] - xbar[k,]
+        Sk[[k]] <- Sk[[k]] + ( r[n,k] * ( mean.vec %o% mean.vec ) )
+      }
+      Sk[[k]] <- Sk[[k]] / Nk[k]
+    }
+  }
+
+  iteration <- 0
+
+  # Apply variational bayesian approach to gaussian mixture modeling
+  # until convergence
+
+  lb.prev <- -Inf
+
+  while(TRUE) {  
+
+    # M step
+
+    # Bishop eqn 10.58
+    alpha <- alpha0 + Nk
+    if ( verbose == TRUE ) { cat("alpha = ", alpha, "\n") }
+  
+    # Bishop eqn 10.60
+    beta <- beta0 + Nk
+    if ( verbose == TRUE ) { cat("beta = ", beta, "\n") }
+  
+    # Bishop eqn 10.61
+    m <- ( 1 / beta ) * ( beta0 * m0 + Nk * xbar )
+    if ( verbose == TRUE ) { cat("m = ", m, "\n") }
+  
+    # Bishop eqn 10.62
+    # NB: solve(W0) == W0^-1 
+    W <- W0inv   # Just get the shape of W right.
+    for(k in 1:N.c) {
+      if ( Nk[k] == 0.0 ) { 
+        W[[k]] <- W0[[k]]
+        next
+      } 
+      Winv <- W0inv[[k]] + ( Nk[k] * Sk[[k]] ) + ( ((beta0[k] * Nk[k])/(beta0[k] + Nk[k])) * ( xbar[k,] - m0[k,] ) %o% ( xbar[k,] - m0[k,] ) )
+      # Compute inverse by first doing LU decomposition ...
+      #Winv.lu <- lu(Winv)
+      # ... and then taking inverse based on that decomp.
+      #W[[k]] <- as.matrix(solve(Winv.lu))
+      W[[k]] <- solve(Winv)
+      if ( any(abs( ( W[[k]] %*% Winv ) - identity.matrix ) >= delta ) ) {
+        cat("W: \n")
+        print(W[[k]])
+        cat("Winv: \n")
+        print(Winv)
+        q()
+      }
+    }
+  
+    # Bishop eqn 10.63
+    # Following commented out line is as writtin in Bishop, but I think 
+    # this is a typo
+    # nu <- nu0 + colSums(r) + 1  
+    nu <- nu0 + Nk
+
+    # E step
+  
+    # Bishop eqn 10.64
+    E.quadratic <- matrix(data=0, nrow=N, ncol=N.c)
+    for(k in 1:N.c) {
+      for(n in 1:N) {
+        mean.vec <- X[n,] - m[k,]
+        temp <- nu[k] * ( W[[k]] %*% mean.vec )
+        val <- mean.vec %*% temp
+        val <- val + ( D / beta[k] )
+        E.quadratic[n,k] <- val
+      }
+    }
+    if ( verbose == TRUE ) { cat("E.quadratic = ", head(E.quadratic), "\n") }
+  
+    # Bishop eqn 10.65
+    # E.ln.lambda is kappalog in VBmix notation
+    E.ln.lambda <- rep(0, N.c)
+    gamma.mat <- matrix(data=0, nrow=N.c, ncol=D)
+    for(k in 1:N.c) {
+      for(d in 1:D) {
+        val <- ( nu[k] + 1 - d ) / 2.0
+        gamma.mat[k,d] <- digamma(val)
+      }
+    }
+  
+    for(k in 1:N.c) {
+      val <- sum(gamma.mat[k,])
+      val <- val + D * log(2)
+      val <- val + determinant(W[[k]], logarithm=TRUE)$modulus
+      E.ln.lambda[k] <- val
+    }
+    if ( verbose == TRUE ) { cat("E.ln.lambda = ", E.ln.lambda, "\n") }
+  
+    # Bishop eqn 10.66
+    # E.ln.pi is pilog in VBmix notation
+    E.ln.pi <- digamma(alpha) - digamma(sum(alpha))
+    if ( verbose == TRUE ) { cat("E.ln.pi = ", E.ln.pi, "\n") }
+  
+    # Bishop eqn 10.69: E.pi <- ( alpha0 + Nk ) / ( sum(alpha0) + N )
+    # Bishop eqn 10.83
+    new.E.pi <- ( 1 / N ) * Nk
+  
+    # Evaluate responsibilities
+
+    # Bishop eqn 10.46
+    pi.matrix <- matrix(data=E.ln.pi, nrow=N, ncol=N.c, byrow=TRUE)
+    kappa.matrix <- matrix(data=E.ln.lambda, nrow=N, ncol=N.c, byrow=TRUE)
+  
+    kappa.matrix <- 0.5 * kappa.matrix
+    E.quadratic <- 0.5 * E.quadratic
+  
+    const.matrix <- matrix(data=(D / 2) * log(2 * pi), nrow=N, ncol=N.c)
+  
+    ln.rho <- pi.matrix + kappa.matrix - const.matrix - E.quadratic 
+      
+    if (any(is.na(ln.rho))) {
+      print("ln.rho is NA")
+      print(ln.rho)
+      warnings()
+      q(status=0)
+    }        
+  
+    # Bishop eqn 10.67
+    
+    r <- matrix(data = 0, nrow=N, ncol=N.c)
+    for(n in 1:N) {
+      if(any(is.na(ln.rho[n,]))) {
+        r[n,] <- rep(NA, N.c)
+        next
+      }
+      row.sum <- log(sum(exp(ln.rho[n,] - max(ln.rho[n,])))) + max(ln.rho[n,], na.rm=TRUE)
+      for(k in 1:N.c) { r[n,k] = exp(ln.rho[n,k] - row.sum) }
+    }
+
+    if (any(is.na(r))) {
+      print("r is NA")
+      print(r)
+      q(status=-1)
+    }
+    
+    if ( verbose == TRUE ) {
+      print("    r:")
+      print(r)
+    }        
+  
+    # Bishop 10.51
+    Nk <- colSums(r)
+  
+    #if(any(Nk <= 0)) { 
+    #  cat("Empty cluster:\n")
+    #  print(Nk)
+    #  # q()
+    #}
+
+    if ( verbose == TRUE ) { cat("Nk = ", Nk, "\n") }
+  
+    # Bishop 10.52
+    # xbar is meank in VBmix notation
+    xbar <- matrix(data=0, nrow=N.c, ncol=D)
+    for(k in 1:N.c) {
+      if ( Nk[k] != 0.0 ) {
+        xbar[k,] <- ( 1 / Nk[k] ) * t(X) %*% r[,k]
+      }
+    }
+    if ( verbose==TRUE ) { cat("xbar = ", xbar, "\n") }
+  
+    # Bishop 10.53
+    Sk <- list(length=N.c)
+    for(k in 1:N.c) {
+      Sk[[k]] <- matrix(data=0, nrow=D, ncol=D)
+      if ( Nk[k] != 0.0 ) {
+        for(n in 1:N) {
+          mean.vec <- X[n,] - xbar[k,]
+          Sk[[k]] <- Sk[[k]] + ( r[n,k] * ( mean.vec %o% mean.vec ) )
+        }
+        Sk[[k]] <- Sk[[k]] / Nk[k]
+      }
+    }
+    if ( verbose == TRUE ) { cat("Sk = ", Sk, "\n") }
+
+    print(new.E.pi)
+    E.pi <- new.E.pi
+  
+    # For efficiency, don't calculate bound on each step
+    if ( ( iteration %% 10 ) != 0 ) { next }
+    
+    # Compute lower bound
+    
+    # Compute p(X|Z,mu,lambda) Eqn 10.71
+    pxlog <- 0
+    for(k in 1:N.c) {
+      tmp <- E.ln.lambda[k]
+      tmp <- tmp - D / beta[k]
+      prod <- nu[k] * ( Sk[[k]] %*% W[[k]] )
+      tmp <- tmp - sum(diag(prod))
+      mean.vec <- xbar[k,] - m[k,]
+      temp <- nu[k] * ( W[[k]] %*% mean.vec )
+      val <- mean.vec %*% temp
+      tmp <- tmp - val
+      tmp <- tmp - D * log(2 * pi)
+      tmp <- 0.5 * tmp * Nk[k]
+      pxlog <- pxlog + tmp
+    }
+  
+    # Compute p(Z|pi) Eqn 10.72
+    # NB: this is element-wise multiplication, not matrix-matrix mult
+    tab <- r * pi.matrix
+    # sum all of the elements of the matrix
+    pzlog <- sum(tab)
+  
+    # Compute p(pi) Eqn 10.73
+    ppilog <- lgamma(sum(alpha0)) - sum(lgamma(alpha0)) + sum((alpha0 - 1) * E.ln.pi)
+  
+    # Compute p(mu, lambda) Eqn 10.74
+    pmulog <- 0.5 * D * sum(log(beta0 / (2 * pi)))
+    pmulog <- pmulog + 0.5 * sum(E.ln.lambda)
+    pmulog <- pmulog - 0.5 * D * sum(beta0 / beta) 
+    for(k in 1:N.c) {
+      mean.vec <- m[k,] - m0[k,]
+      temp.vec <- beta0[k] * nu[k] * ( W[[k]] %*% mean.vec )
+      val <- mean.vec %*% temp.vec
+      pmulog <- pmulog - val
+    }
+    # K * ln(B(W0, nu0)) term.  But we allow component-specific
+    # W0 and nu0.  So, this becomes an iteration over the K 
+    # components (and we lose the K prefactor).
+    for(k in 1:N.c) {
+      val <- - ( nu0[k] / 2 ) * determinant(W0[[k]], logarithm=TRUE)$modulus
+      val <- val - nu0[k] * D * log(2) / 2.0
+      val <- val - D * ( D - 1 ) * log(pi) / 4.0
+      for(d in 1:D) {
+        val <- val - lgamma((nu0[k] + 1 - d) / 2.0)
+      }
+      pmulog <- pmulog + val
+    }
+  
+    pmulog <- pmulog + 0.5 * sum( (nu0 - D - 1) * E.ln.lambda )
+  
+    for(k in 1:N.c) {
+      prod <- W0inv[[k]] %*% W[[k]]
+      pmulog <- pmulog - 0.5 * nu[k] * sum(diag(prod))
+    }
+  
+    # Compute q(Z) Eqn 10.75
+    qzlog <- 0
+    for(n in 1:N) {
+      for(k in 1:N.c) {
+        if ( r[n,k] != 0 ) {
+          qzlog <- qzlog + r[n,k] * log(r[n,k])
+        }
+      }
+    }
+   
+    # Compute q(pi) Eqn 10.76
+    qpilog <- lgamma(sum(alpha)) - sum(lgamma(alpha)) + sum((alpha - 1) * E.ln.pi)
+  
+    # Compute q(mu, lambda) Eqn 10.77
+    qmulog <- 0.5 * sum(E.ln.lambda) 
+    qmulog <- qmulog + 0.5 * D * sum(beta / (2 * pi))
+    qmulog <- qmulog - 0.5 * N.c * D
+    # Calculate H[q(lambda_k)] term
+    for(k in 1:N.c) {
+      # Calculate E[ln|lambda_k|]
+      L <- 0
+      for(d in 1:D) {
+        L <- L + digamma( (nu[k] + 1 - d) / 2.0 )
+      }
+      L <- L + D * log(2)
+      W.det <- determinant(W[[k]], logarithm=TRUE)$modulus
+      L <- L + W.det
+  
+      blog <- - ( nu[k] / 2 ) * W.det
+      blog <- blog - nu[k] * D * log(2) / 2.0
+      blog <- blog - D * ( D - 1 ) * log(pi) / 4.0
+      for(d in 1:D) {
+        blog <- blog - lgamma((nu[k] + 1 - d) / 2.0)
+      }
+      val <- - ( (nu[k] - D - 1) / 2.0 ) * L + nu[k] * D / 2.0 - blog
+      qmulog <- qmulog - val
+    }  
+  
+    # Calculate the lower bound
+    lb <- pxlog + pzlog + ppilog + pmulog - qzlog - qpilog - qmulog
+    cat("lb = ", lb, "\n")
+
+    if ( lb.prev > lb ) {
+      cat(sprintf("lb decreased from %f to %f!\n", lb.prev, lb))
+      # q(status=-1)
+    }
+    if ( abs( ( lb - lb.prev ) / lb ) < convergence.threshold ) { break }
+
+    lb.prev <- lb
+
+  } # End inner while(TRUE)
+
+  retList <- list("retVal" = 0, "m" = m, "alpha" = alpha, "beta" = beta, "nu" = nu, "W" = W, "r" = r, "num.iterations" = iteration, "ln.rho" = ln.rho, "E.lnpi" = E.ln.pi, "E.pi" = E.pi)
+
+  return(retList)
+} # End gaussian.bmm.fixed.num.components function
+
+####--------------------------------------------------------------
+## gaussian.bmm: Use a variational Bayesian approach to fit a mixture of 
+## gaussian distributions to count data.
+##
+## NB: Clustering is first run to convergence using 
+## gaussian.bmm.fixed.num.components.
+## If any components have probability less than pi.threshold, they are
+## discarded and the clustering is run to convergence again.
+##
+## Inputs:
+## X:  an N x D matrix with rows being the items to cluster.
+##     All entries are assumed to be proportions (i.e., between 0 and 1).
+##     Notice that there are no summation restrictions--i.e., proportions
+##     do not sum to unity across an item's dimensions.
+## N.c:  the number of components/clusters to attempt
+## r:  the N x N.c matrix of initial responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## m:  a N.c x D matrix holding the _initial_ centers of the gaussians.
+## alpha:  a vector with D components holding the _initial_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _initial_ values that scale the precision
+## nu:  a D-vector holding the _initial_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _initial_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## m0, alpha0, beta0, nu0, W0:  the hyperparameters corresponding to the
+##                              above initial values (and with the same
+##                              respective matrix/vector dimensionality).
+## convergence.threshold:  minimum absolute relative difference between 
+##                         variational lower bounds across consecutive
+##                         iterations to reach converge.
+## max.iterations:  maximum number of iterations to attempt
+## verbose:  output progress in terms of mixing coefficient (expected) values
+##           if 1.
+## pi.threshold:  discard any cluster with weight/mixing coefficient less
+##                than pi.threshold _following_ convergence.  
+## Outputs: a list with the following entries
+## retVal:  0 indicates successful convergence; -1 indicates a failure
+##          to converge.
+## m:  a N.c x D matrix holding the _converged_ centers of the gaussians.
+## alpha:  a vector with D components holding the _converged_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _converged_ values that scale the precision
+## nu:  a D-vector holding the _converged_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _converged_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## r:  the N x N.c matrix of responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## num.iterations:  the number of iterations required to reach convergence.
+## ln.rho:  an N x N.c matrix holding the ln[rho], as defined in eqn (32).
+## E.lnpi:  the D-vector holding the values E[ln pi]
+
+gaussian.bmm <- function(X, N.c, r, m, alpha, beta, nu, W, m0, alpha0, beta0, nu0, W0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = 0, pi.threshold = 10^-2)
+{
+  
+  total.iterations <- 0 
+  D <- dim(m)[2]
+
+  while(TRUE) {
+
+    if(verbose){
+      print(r)
+    }
+
+    bmm.res <- gaussian.bmm.fixed.num.components(X, N.c, r, m, alpha, beta, nu, W, m0, alpha0, beta0, nu0, W0, convergence.threshold, max.iterations, verbose)
+    
+    if(bmm.res$retVal != 0) {
+      cat("Failed to converge!\n")
+      q(status=-1)
+    }
+
+    m <- bmm.res$m
+    alpha <- bmm.res$alpha
+    beta <- bmm.res$beta
+    nu <- bmm.res$nu
+    W <- bmm.res$W
+    E.pi <- bmm.res$E.pi
+
+    total.iterations <- total.iterations + bmm.res$num.iterations
+
+    ln.rho <- bmm.res$ln.rho
+    E.lnpi <- bmm.res$E.lnpi
+
+    do.inner.iteration <- FALSE
+
+    apply.min.items.condition <- TRUE
+
+    if((apply.min.items.condition == TRUE) & (N.c > 1)) {
+      non.zero.indices <- E.pi > pi.threshold
+      N = length(X[,1])
+
+      if ( any(non.zero.indices==FALSE) ) {
+
+        do.inner.iteration <- TRUE
+
+        numeric.indices <- (1:N.c)
+
+        E.pi <- E.pi[non.zero.indices]
+        E.lnpi <- E.lnpi[non.zero.indices]
+
+        N.c <- length(E.pi)
+        r <- matrix(r[,non.zero.indices], nrow=N, ncol=N.c)
+        ln.rho <- matrix(ln.rho[,non.zero.indices], nrow=N, ncol=N.c)
+        # Need to renormalize r--do it gently.
+        for(n in 1:N) {
+           if(any(is.na(ln.rho[n,]))) {
+             r[n,] <- rep(NA, N.c)
+             next
+           }
+          
+           row.sum <- log(sum(exp(ln.rho[n,] - max(ln.rho[n,])))) + max(ln.rho[n,])
+           for(k in 1:N.c) { r[n,k] = exp(ln.rho[n,k] - row.sum) }
+        }
+
+        m <- matrix(m[non.zero.indices,], nrow=N.c, ncol=D)
+        alpha <- alpha[non.zero.indices,drop=FALSE]
+        beta <- beta[non.zero.indices,drop=FALSE]
+        nu <- nu[non.zero.indices,drop=FALSE]
+        W <- W[non.zero.indices,drop=FALSE]                        
+        m0 <- matrix(m0[non.zero.indices,], nrow=N.c, ncol=D)
+        alpha0 <- alpha0[non.zero.indices,drop=FALSE]
+        beta0 <- beta0[non.zero.indices,drop=FALSE]
+        nu0 <- nu0[non.zero.indices,drop=FALSE]
+        W0 <- W0[non.zero.indices,drop=FALSE]                        
+      }
+    } # End apply.min.items.condition
+
+    if(do.inner.iteration == FALSE) { break }
+
+  }
+
+  retList <- list("retVal" = 0, "m" = m, "alpha" = alpha, "beta" = beta, "nu" = nu, "W" = W, "r" = r, "num.iterations" = total.iterations, "ln.rho" = ln.rho, "E.lnpi" = E.lnpi, "E.pi" = E.pi)
+
+  return(retList)
+
+} # End gaussian.bmm function
+
+
+####--------------------------------------------------------------
+## init.gaussian.bmm.hyperparameters:  Initialize the gaussian mixture model
+##                                     hyperparameters (to be passed to 
+##                                     gaussian.bmm)
+##
+## NB:  This provides what should be a generally reasonable initialization of
+##      hyperparameters.  However, better results may be obtained by
+##      tuning these in an application-specific manner.
+##
+## Inputs:
+## X:  an N x D matrix with rows being the items to cluster.
+##     All entries are assumed to be proportions (i.e., between 0 and 1).
+##     Notice that there are no summation restrictions--i.e., proportions
+##     do not sum to unity across an item's dimensions.
+## N.c:  the number of components/clusters to attempt
+##
+## Outputs:
+## m0:  a N.c x D matrix holding the prior centers of the gaussians.
+## alpha0:  a vector with D components holding the hyperparameter values of the
+##          parameters of the Dirichlet distribution over the mixing 
+##          coefficients pi.  
+## beta0: a D-vector holding the prior values that scale the precision
+## nu0:  a D-vector holding the prior values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W0: a list holding the prior D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+init.gaussian.bmm.hyperparameters <- function(X, N.c) 
+{
+  D <- dim(X)[2]
+
+  # Dirichlet hyperparameter
+  # This gives very little prior weight to the existence of each
+  # cluster--hence, any cluster that "survives" the iteration will
+  # need to be supported by the data.
+  alpha0 <- rep(0.001, N.c)
+  
+  # _Prior_ cluster centers
+  m0 <- matrix(data=0, ncol=D, nrow=N.c)
+  
+  # We have three parameters beta0, nu0, and W0.  We will try to satisfy 3
+  # goals:
+  # (1) Make the prior of the precision broad 
+  # (2) Keep beta0 as nearly as possible to 1--i.e., so that the precision
+  #     matrix is coupled to the mu vector and can't go screwy without
+  #     affecting the mean.
+  # (3) Keep beta0 * E[precision] = beta0 * nu0 * W0 = effective.precision
+  # Accomplish these respectively via:
+  # (1) Set W0 large
+  # (2) Set nu0 as small as possible (as permitted in keeping the
+  #     Wishart finite), so that when we guarantee (3) beta0 will be
+  #     as large (near 1) as possible.
+  # (3) Set beta0 = effective.precision / ( nu0 * W0 )
+  
+  # Set the desired expected value, effective.precision, of the precision of the 
+  # gaussians. This implies an expected value, effective.sigma, of the std deviation,
+  # since precision Lambda = Sigma^{-1}.
+  # Also, set a desired variance on the sigma.
+  effective.precision <- 1000
+  effective.sigma <- sqrt(1/effective.precision)
+  
+  delta <- 10^-7
+  delta <- 10^-5
+  
+  # These desired values determine nu0 and W0.
+  nu0 <- rep(D - 1 + delta, N.c)
+
+  W0 <- list(length=N.c)
+  for(k in 1:N.c) {
+    W0[[k]] <- matrix(data=0, nrow=D, ncol=D)
+  }
+  
+  # NB: we are choosing W0 diagonal and homoscedastic.
+  for(d in 1:D) {
+    for(k in 1:N.c) {
+      W0[[k]][d,d] <- 10^4
+    }
+  }
+  
+  beta0 <- rep(0, N.c)
+  for(k in 1:N.c) {
+    beta0[k] <- effective.precision/(W0[[k]][1,1]*nu0[k])
+  }
+
+  retList <- list("m0" = m0, "alpha0" = alpha0, "beta0" = beta0, "nu0" = nu0, "W0" = W0)
+  return(retList)
+
+} # End init.gaussian.bmm.hyperparameters
+
+
+####--------------------------------------------------------------
+## init.gaussian.bmm.parameters:  Initialize the gaussian mixture model 
+##                                parameters (to be passed to gaussian.bmm)
+##
+## Initialize parameters such that expected proportions have the values
+## determined by an initial k-means clustering.
+##
+## NB:  This provides what should be a generally reasonable initialization of
+##      hyperparameters.  However, better results may be obtained by
+##      tuning these in an application-specific manner.
+##
+##
+## Inputs:
+## X:  an N x D matrix with rows being the items to cluster.
+##     All entries are assumed to be proportions (i.e., between 0 and 1).
+##     Notice that there are no summation restrictions--i.e., proportions
+##     do not sum to unity across an item's dimensions.
+## N.c:  the number of components/clusters to attempt
+## m0:  a N.c x D matrix holding the prior centers of the gaussians.
+## alpha0:  a vector with D components holding the hyperparameter values of the
+##          parameters of the Dirichlet distribution over the mixing 
+##          coefficients pi.  
+## beta0: a D-vector holding the prior values that scale the precision
+## nu0:  a D-vector holding the prior values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W0: a list holding the prior D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+##
+## Outputs:
+## m:  a N.c x D matrix holding the _initial_ centers of the gaussians.
+## alpha:  a vector with D components holding the _initial_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _initial_ values that scale the precision
+## nu:  a D-vector holding the _initial_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _initial_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## r:  the N x N.c matrix of initial responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## kmeans.clusters:  an N-vector giving the assignment of each of the N
+##                   items to a cluster, as determined by kmeans.
+## kmeans.centers:  an N.c x D matrix holding the centers of the N.c
+##                  clusters/components determined by kmeans
+init.gaussian.bmm.parameters <- function(X, N.c, m0, alpha0, beta0, nu0, W0)
+{
+  N <- dim(X)[1]
+  D <- dim(X)[2]
+
+  # Initialize the responsibilities r_ni with K-means.
+  kmeans.out <- kmeans(X, N.c, nstart=1000)
+  kmeans.clusters <- kmeans.out$cluster
+  kmeans.centers <- kmeans.out$centers
+
+  r <- matrix(data=0, nrow=N, ncol=N.c)
+  for(i in 1:N) {
+    r[i,kmeans.clusters[i]]<- 1
+  }
+
+  # NB: bmm.gaussian actually computes m, alpha, beta, nu, and W
+  # before using them, so we don't need to initialize.  It does
+  # use r before computing it, so that does need to be initialized.
+  
+  # _Initial_ cluster centers
+  m <- kmeans.centers
+
+  alpha <- alpha0
+  beta <- beta0
+  nu <- nu0
+  W <- W0
+  
+  retList <- list("m" = m, "alpha" = alpha, "beta" = beta, "nu" = nu, "W" = W, "r" = r, "kmeans.centers" = kmeans.centers, "kmeans.clusters" = kmeans.clusters)
+  return(retList)
+
+}
+
+####--------------------------------------------------------------
+## gaussian.bmm.calculate.posterior.predictive.precision: Return the
+##    precision of the posterior predictive density.
+## Inputs:  
+##
+## m:  a N.c x D matrix holding the _converged_ centers of the gaussians.
+## alpha:  a vector with D components holding the _converged_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _converged_ values that scale the precision
+## nu:  a D-vector holding the _converged_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _converged_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## Outputs:
+##
+## a list holding the precision matrices of the posterior predictive
+## densities for each component.
+gaussian.bmm.calculate.posterior.predictive.precision <- function(m, alpha, beta, nu, W)
+{
+  # Bishop eqn 10.82
+  N.c <- dim(m)[1]
+  m <- dim(m)[2]
+
+  L <- list(length=N.c)
+  for(k in 1:N.c) {
+    L[[k]] <- ( ( nu[k] + 1 - D ) * beta[k] ) * W[[k]] / ( 1 + beta[k] )
+  }
+
+  return(L)
+}
+
+####--------------------------------------------------------------
+## gaussian.bmm.narrowest.mean.interval.about.centers:  Return the narrowest (Bayesian
+##    credible) interval of the means that include the centers and
+##    a fixed proportion of the probability distribution of the means
+##    (e.g., .68 or .95).
+##
+## Inputs:  
+##
+## m:  a N.c x D matrix holding the _converged_ centers of the gaussians.
+## alpha:  a vector with D components holding the _converged_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _converged_ values that scale the precision
+## nu:  a D-vector holding the _converged_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _converged_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## proportion:  the percentage of the distribution of each mean to include
+##              in the interval (e.g., .68 or .95)
+##
+## Outputs:
+## 
+## a list with values lb and ub, where each are D x N.c
+## matrices holding the respective lower or upper bounds of the intervals,
+## and centers, which is a D x N.c matrix holding the empirical means sampled
+## from the posterior distribution
+
+gaussian.bmm.narrowest.mean.interval.about.centers <- function(m, alpha, beta, nu, W, proportion) 
+{
+  if(abs(proportion - .68) > .01) {
+    cat("gaussian.bmm.narrowest.mean.interval.about.centers only implemented for 1SD = 68%.", proportion, "not supported\n")
+    q(status=-1)
+  }
+
+  D <- dim(m)[2]
+  N.c <- dim(m)[1]
+
+  # Add the "1-sigma" contour intervals for the standard error _of the mean_
+  # i.e., provide the 1-sigma confidence interval of q(mu_k) =
+  # \int q(mu_k, lambda_k) dlambda_k.
+  # As described by Gelman, Carlin, Stern, and Rubin
+  # (Bayesian Data Analysis; 2nd edition; page 88), this is
+  # also a multivariate student t.  It has degrees of freedom
+  # nu[k] + 1 - D (as above), but precision
+  # ( ( nu[k] + 1 - D ) * beta[k] ) * W[[k]], i.e.,
+  # without the ( 1 + beta[k] ) denominator
+  L <- list(length=N.c)
+  for(k in 1:N.c) {
+    L[[k]] <- ( ( nu[k] + 1 - D ) * beta[k] ) * W[[k]] 
+  }
+
+  lb <- matrix(data = 0, nrow=D, ncol=N.c)
+  ub <- matrix(data = 0, nrow=D, ncol=N.c)
+  centers <- matrix(data = 0, nrow=D, ncol=N.c)
+
+  for(k in 1:N.c) {
+    # i.e., provide the 1-sigma confidence interval of the posterior
+    # predictive density (Bishop eqn 10.81)--a Student t.
+    Lkinv = solve(L[[k]])
+    cov.matrix <- ( ( nu[k] + 1 - D ) / ( nu[k] + 1 - D - 2 ) ) * Lkinv
+    for(l in 1:D){
+      centers[l,k] <- m[k,l]
+      lb[l,k] <- centers[l,k] - cov.matrix[l,l]
+      ub[l,k] <- centers[l,k] + cov.matrix[l,l]
+    }
+  }
+  
+  retList <- list("lb" = lb, "ub" = ub, "centers" = centers)
+  return(retList)
+
+} # End gaussian.bmm.narrowest.mean.interval.about.centers 
+
+####--------------------------------------------------------------
+## bmm.narrowest.proportion.interval.about.centers:  Return the narrowest 
+##    interval of proportions from the posterior distribution that
+##    includes their centers a fixed proportion of the posterior distribution
+##    (e.g., .68 or .95).
+##
+## Inputs:  
+## m:  a N.c x D matrix holding the _converged_ centers of the gaussians.
+## alpha:  a vector with D components holding the _converged_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _converged_ values that scale the precision
+## nu:  a D-vector holding the _converged_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _converged_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## proportion:  the percentage of the distribution of each mean to include
+##              in the interval (e.g., .68 or .95)
+##
+## Outputs:
+## 
+## a list with values lb and ub, where each are D x N.c
+## matrices holding the respective lower or upper bounds of the intervals,
+## and centers, which is a D x N.c matrix holding the empirical means sampled
+## from the posterior distribution
+
+gaussian.bmm.narrowest.proportion.interval.about.centers <- function(m, alpha, beta, nu, W, proportion) 
+{
+  if(abs(proportion - .68) > .01) {
+    cat("gaussian.bmm.narrowest.mean.interval.about.centers only implemented for 1SD = 68%.", proportion, "not supported\n")
+    q(status=-1)
+  }
+
+  L <- gaussian.bmm.calculate.posterior.predictive.precision(m, alpha, beta, nu, W)
+
+  D <- dim(m)[2]
+  N.c <- dim(m)[1]
+
+  lb <- matrix(data = 0, nrow=D, ncol=N.c)
+  ub <- matrix(data = 0, nrow=D, ncol=N.c)
+  centers <- matrix(data = 0, nrow=D, ncol=N.c)
+
+  for(k in 1:N.c) {
+    # i.e., provide the 1-sigma confidence interval of the posterior
+    # predictive density (Bishop eqn 10.81)--a Student t.
+    Lkinv = solve(L[[k]])
+    cov.matrix <- ( ( nu[k] + 1 - D ) / ( nu[k] + 1 - D - 2 ) ) * Lkinv
+    for(l in 1:D){
+      centers[l,k] <- m[k,l]
+      lb[l,k] <- centers[l,k] - cov.matrix[l,l]
+      ub[l,k] <- centers[l,k] + cov.matrix[l,l]
+    }
+  }
+  
+  retList <- list("lb" = lb, "ub" = ub, "centers" = centers)
+  return(retList)
+
+} # End gaussian.bmm.narrowest.proportion.interval.about.centers 
+
+
+####--------------------------------------------------------------
+## gaussian.bmm.component.posterior.predictive.density: Calculate the posterior
+##   predictive density in a single dimension for a single component.
+##
+## Inputs:
+##
+## x:  a proportion D-vector
+## k:  the component at which to evaluate the density
+## m:  a N.c x D matrix holding the _converged_ centers of the gaussians.
+## alpha:  a vector with D components holding the _converged_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _converged_ values that scale the precision
+## nu:  a D-vector holding the _converged_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _converged_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## rooti:  a list holding the inverses of the cholesky root of the posterior predictive
+##    covariance matrix (covariance matrix = inverse of precision matrix)
+##    rooti = backsolve(chol(Lkinv), diag(2))
+## Outputs:
+##
+## the posterior preditive density at x for the specified component
+
+gaussian.bmm.component.posterior.predictive.density <- function(x, k, m, alpha, beta, nu, W, rooti)
+{
+  D <- dim(m)[2]
+
+  suppressPackageStartupMessages(library("bayesm")) # for lndMvst
+  y <- ( alpha[k] / sum(alpha) ) * lndMvst(x, nu=(nu[k]+1-D), mu=m[k,], rooti=rooti[[k]])
+  
+  return(y)
+}
+
+####--------------------------------------------------------------
+## gaussian.bmm.posterior.predictive.density: Calculate the posterior
+##   predictive density in a single dimension across all components
+##
+## Inputs:
+##
+## x:  a proportion D-vector
+## m:  a N.c x D matrix holding the _converged_ centers of the gaussians.
+## alpha:  a vector with D components holding the _converged_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _converged_ values that scale the precision
+## nu:  a D-vector holding the _converged_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _converged_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## rooti:  a list holding the inverses of the cholesky root of the posterior predictive
+##    covariance matrix (covariance matrix = inverse of precision matrix)
+##    rooti = backsolve(chol(Lkinv), diag(2))
+## Outputs:
+##
+## the posterior preditive density at x summed across all components
+
+gaussian.bmm.posterior.predictive.density <- function(x, m, alpha, beta, nu, W, rooti)
+{
+  y <- 0
+  for(k in 1:N.c) {
+    y <- y + gaussian.bmm.component.posterior.predictive.density(x, k, m, alpha, beta, nu, W, rooti)
+  }
+  return(y)
+}
+
+####--------------------------------------------------------------
+## gaussian.bmm.plot.1d:  Overlay the posterior predictive density on a histogram
+##                        of the data.
+##
+## Inputs:
+## X:  an N x D matrix with rows being the items to cluster.
+##     All entries are assumed to be proportions (i.e., between 0 and 1).
+##     Notice that there are no summation restrictions--i.e., proportions
+##     do not sum to unity across an item's dimensions.
+## m:  a N.c x D matrix holding the _converged_ centers of the gaussians.
+## alpha:  a vector with D components holding the _converged_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _converged_ values that scale the precision
+## nu:  a D-vector holding the _converged_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _converged_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## r:  the N x N.c matrix of responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## title:  plot title
+## xlab:  x label
+## ylab:  y label
+##
+## Outputs:
+##
+## ggplot object displaying the clustered data and "1-sigma" contour intervals
+## for the standard error of the mean.
+
+gaussian.bmm.plot.1d <- function(X, m, alpha, beta, nu, W, r, title, xlab, ylab)
+{
+  bin.width <- .025
+  N.c <- dim(m)[2]
+
+  proportions <- data.frame(x=X[,1], row.names=NULL, stringsAsFactors=NULL)
+  
+  # Generate (x,y) values of the posterior predictive density
+  n <- 1000
+  y <- rep.int(0, n)
+  # Don't evaluate at x=0 or x=1, which will blow up
+  x <- seq(1/n, 1-(1/n), length=n)
+  ym <- matrix(data=0,nrow=N.c,ncol=n)
+  num.iterations <- 1000
+
+  
+  rooti <- list(length=N.c)
+  L <- gaussian.bmm.calculate.posterior.predictive.precision(m, alpha, beta, nu, W)
+  for (k in 1:N.c) {
+    Lkinv = solve(L[[k]])
+    rooti[[k]] <- backsolve(chol(Lkinv), diag(2))
+  }
+  
+  for (k in 1:N.c) {
+    
+    for (i in 1:n) {
+
+      # Evaluate posterior probability at x.
+      ym[k,i] <- gaussian.bmm.component.posterior.predictive.density(x, k, m, alpha, beta, nu, W, rooti)
+  
+      y[i] <- y[i] + ym[k,i]
+    }
+  }
+
+  max.posterior.density <- max(ym)
+  # Overlay the histogram of the data on to the beta mixture model fit.
+
+  # Set max posterior to max of splinefun.
+  limits <- data.frame(x=c(min(x),max(x)))
+
+  f <- splinefun(x,y)
+  max.posterior.density <- max(unlist(lapply(seq(from=limits$x[1],to=limits$x[2],by=10^-3), f)))
+
+  g <- ggplot(data = proportions, aes(x)) + ggtitle(title) + xlab(xlab) + ylab(ylab)
+
+  g <- g + theme_bw() + theme(axis.line = theme_segment(colour = "black"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank()) 
+
+  num.breaks <- ceiling(1/bin.width) + 1
+  breaks <- unlist(lapply(0:(num.breaks-1), function(x) x/(num.breaks-1)))
+  g <- g + geom_histogram(data=proportions, mapping=aes(x), fill="white", colour="black", breaks=breaks)
+
+  tmp <- print(g)
+  max.density <- max(tmp[["data"]][[1]]$ymax)
+
+  scale <- (max.density/max.posterior.density)
+
+  vertical.offset <- .1 * max.posterior.density
+
+  for(k in 1:N.c) {
+      
+    f <- splinefun(x,scale*ym[k,])
+
+    g <- g + stat_function(data = limits, fun=f, mapping=aes(x), lty="dashed")
+
+  }
+
+  f <- splinefun(x,scale*y)
+
+  g <- g + stat_function(data = limits, fun=f, mapping=aes(x))
+  
+  xmin <- -0.05
+  xmax <-  1.05
+
+  g <- g + coord_cartesian(ylim=c(0, max.density*1.1), xlim=c(xmin,xmax))
+
+  return(g)
+} # End gaussian.bmm.plot.1d
+
+
+####--------------------------------------------------------------
+## gaussian.bmm.plot.2d:  Plot data highlighted according to clustering
+##
+## Plot the data with each item's respective color/symbol indicating
+## its cluster.  Also display "1-sigma" contour intervals for the
+## standard error of the mean for the standard error.
+##
+## Inputs:
+## X:  an N x D matrix with rows being the items to cluster.
+##     All entries are assumed to be proportions (i.e., between 0 and 1).
+##     Notice that there are no summation restrictions--i.e., proportions
+##     do not sum to unity across an item's dimensions.
+## m:  a N.c x D matrix holding the _converged_ centers of the gaussians.
+## alpha:  a vector with D components holding the _converged_ values of the
+##         parameters of the Dirichlet distribution over the mixing 
+##         coefficients pi.  
+## beta: a D-vector holding the _converged_ values that scale the precision
+## nu:  a D-vector holding the _converged_ values of the degrees of
+##      freedom parameter to the Wishart distribution
+## W: a list holding the _converged_ D x D symmetric, positive definite matrix
+##    parameters to the Wishart distribution, for each of the N.c components
+## r:  the N x N.c matrix of responsibilities, with r[n, nc] giving the
+##     probability that item n belongs to component nc
+## title:  plot title
+## xlab:  x label
+## ylab:  y label
+##
+## Outputs:
+##
+## ggplot object displaying the clustered data and "1-sigma" contour intervals
+## for the standard error of the mean.
+
+gaussian.bmm.plot.2d <- function(X, m, alpha, beta, nu, W, r, title, xlab, ylab)
+{
+  N <- dim(X)[1]
+  N.c <- dim(m)[1]
+
+  print(N.c)
+  
+  # width = 1 std dev
+  suppressPackageStartupMessages(library("NORMT3")) # for erf
+  width <- as.double(erf(1/sqrt(2)))  
+ 
+  # width <- sqrt(width)
+
+  # Calculate standard error of the means
+  SEM.res <- gaussian.bmm.narrowest.mean.interval.about.centers(m, alpha, beta, nu, W, width) 
+  SEM.centers <- t(SEM.res$centers)
+  SEMs.lb <- t(SEM.res$lb)
+  SEMs.ub <- t(SEM.res$ub)
+
+  # Make sure none of the clusters = 0 or 1, which would be used for black.
+  # Let's reserve that for highlighting.
+
+  clusters <- rep(0, N)
+  for(n in 1:N) {
+    max.cluster <- 0
+    max.assignment <- -1
+    for(k in 1:N.c) {
+      if ( r[n,k] > max.assignment ) {
+        max.assignment <- r[n,k]
+        # + 2 ensures none of the clusters has number 0 or 1,
+        # which would make it black when cluster is used as colour
+        max.cluster <- ( k + 2 )
+      }
+    }
+    clusters[n] <- max.cluster
+  }
+
+  proportions <- data.frame(x=X[,1], y=X[,2], row.names=NULL, stringsAsFactors=NULL)
+
+  centers <- data.frame(x=SEM.centers[,1], y=SEM.centers[,2], row.names=NULL, stringsAsFactors=NULL)
+
+  g <- ggplot(data = proportions, aes(x=x, y=y)) + ggtitle(title) + xlab(xlab) + ylab(ylab) + geom_point(data = proportions, aes(x=x, y=y), shape=clusters, colour=clusters) + geom_point(data = centers, aes(x=x, y=y), size=3, colour='blue') 
+
+  g <- g + theme_bw() + theme(axis.line = theme_segment(colour = "black"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank()) 
+  
+  # Add the "1-sigma" contour intervals for the standard error _of the mean_
+  for(k in 1:N.c) {
+    # i.e., provide the 1-sigma confidence interval of q(mu_k) =
+    # \int q(mu_k, lambda_k) dlambda_k.
+   
+    xc <- SEMs.lb[k,1] + ((SEMs.ub[k,1] - SEMs.lb[k,1])/2)
+    yc <- SEMs.lb[k,2] + ((SEMs.ub[k,2] - SEMs.lb[k,2])/2)
+  
+    ell <- my.ellipse(hlaxa = ((SEMs.ub[k,1] - SEMs.lb[k,1])/2), hlaxb = ((SEMs.ub[k,2] - SEMs.lb[k,2])/2), xc = xc, yc = yc)
+  
+    df_ell <- cbind(data.frame(x=ell$x, y=ell$y))
+  
+    g <- g + geom_path(data=df_ell, aes(x=x,y=y), colour="blue", linetype=2)
+  }
+  
+  xmin <- -0.05
+  xmax <-  1.05
+
+  g <- g + coord_cartesian(xlim=c(xmin,xmax), ylim=c(xmin,xmax))
+
+  return(g)
+
+} # End gaussian.bmm.plot.2d
+
+## End gaussian mixture model
+
+
+
