@@ -2523,7 +2523,12 @@ gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, 
       print("    r:")
       print(r)
     }        
-  
+
+    # Ensure things don't get too small.  There are sometimes
+    # problems with many initial clusters--I assume we divide
+    # by r = zero somewhere.
+    r <- r + 10^-9
+    
     # Bishop 10.51
     Nk <- colSums(r)
   
@@ -2557,7 +2562,7 @@ gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, 
         Sk[[k]] <- Sk[[k]] / Nk[k]
       }
     }
-    if ( verbose == TRUE ) { cat("Sk = ", Sk, "\n") }
+    #if ( verbose == TRUE ) { cat("Sk = ", Sk, "\n") }
 
     if ( verbose == TRUE) { print(new.E.pi) }
     E.pi <- new.E.pi
@@ -3007,7 +3012,7 @@ gaussian.bmm.calculate.posterior.predictive.precision <- function(m, alpha, beta
 {
   # Bishop eqn 10.82
   N.c <- dim(m)[1]
-  m <- dim(m)[2]
+  D <- dim(m)[2]
 
   L <- list(length=N.c)
   for(k in 1:N.c) {
@@ -3149,6 +3154,13 @@ gaussian.bmm.narrowest.proportion.interval.about.centers <- function(m, alpha, b
 } # End gaussian.bmm.narrowest.proportion.interval.about.centers 
 
 
+## Student t distribution
+my.dt <- function(x, mu, Lambda, nu)
+{
+  return( exp(lgamma((nu+1)/2) - lgamma(nu/2)) * sqrt(Lambda/(pi*nu)) * ((1+((Lambda*((x-mu)^2))/(nu)))^(-((nu+1)/2))) )
+}
+
+
 ####--------------------------------------------------------------
 ## gaussian.bmm.component.posterior.predictive.density: Calculate the posterior
 ##   predictive density in a single dimension for a single component.
@@ -3173,12 +3185,18 @@ gaussian.bmm.narrowest.proportion.interval.about.centers <- function(m, alpha, b
 ##
 ## the posterior preditive density at x for the specified component
 
-gaussian.bmm.component.posterior.predictive.density <- function(x, k, m, alpha, beta, nu, W, rooti)
+gaussian.bmm.component.posterior.predictive.density <- function(x, k, m, alpha, beta, nu, W, L)
 {
   D <- dim(m)[2]
 
-  suppressPackageStartupMessages(library("bayesm")) # for lndMvst
-  y <- ( alpha[k] / sum(alpha) ) * lndMvst(x, nu=(nu[k]+1-D), mu=m[k,], rooti=rooti[[k]])
+  if(D == 1) {
+    y <- ( alpha[k] / sum(alpha) ) * my.dt(x, m[k], L[[k]], nu[k] + 1 - D)
+    return(y)
+  }
+  print("Untested lndMvst")
+  q(status=-1)
+  #suppressPackageStartupMessages(library("bayesm")) # for lndMvst
+  #y <- ( alpha[k] / sum(alpha) ) * lndMvst(x, nu=(nu[k]+1-D), mu=m[k,], rooti=rooti[[k]])
   
   return(y)
 }
@@ -3214,13 +3232,6 @@ gaussian.bmm.posterior.predictive.density <- function(x, m, alpha, beta, nu, W, 
   }
   return(y)
 }
-
-## Student t distribution
-my.dt <- function(x, mu, Lambda, nu)
-{
-  return( exp(lgamma((nu+1)/2) - lgamma(nu/2)) * sqrt(Lambda/(pi*nu)) * ((1+((Lambda*((x-mu)^2))/(nu)))^(-((nu+1)/2))) )
-}
-
 
 ####--------------------------------------------------------------
 ## gaussian.bmm.plot.1d:  Overlay the posterior predictive density on a histogram
