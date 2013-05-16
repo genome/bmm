@@ -2559,7 +2559,7 @@ gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, 
     }
     if ( verbose == TRUE ) { cat("Sk = ", Sk, "\n") }
 
-    print(new.E.pi)
+    if ( verbose == TRUE) { print(new.E.pi) }
     E.pi <- new.E.pi
   
     # For efficiency, don't calculate bound on each step
@@ -2662,7 +2662,6 @@ gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, 
   
     # Calculate the lower bound
     lb <- pxlog + pzlog + ppilog + pmulog - qzlog - qpilog - qmulog
-    cat("lb = ", lb, "\n")
 
     if ( lb.prev > lb ) {
       cat(sprintf("lb decreased from %f to %f!\n", lb.prev, lb))
@@ -2884,7 +2883,8 @@ init.gaussian.bmm.hyperparameters <- function(X, N.c)
   delta <- 10^-5
   
   # These desired values determine nu0 and W0.
-  nu0 <- rep(D - 1 + delta, N.c)
+  nu0 <- rep(max(1,D - 1 + delta), N.c)
+  #nu0 <- rep(1, N.c)
 
   W0 <- list(length=N.c)
   for(k in 1:N.c) {
@@ -3215,6 +3215,13 @@ gaussian.bmm.posterior.predictive.density <- function(x, m, alpha, beta, nu, W, 
   return(y)
 }
 
+## Student t distribution
+my.dt <- function(x, mu, Lambda, nu)
+{
+  return( exp(lgamma((nu+1)/2) - lgamma(nu/2)) * sqrt(Lambda/(pi*nu)) * ((1+((Lambda*((x-mu)^2))/(nu)))^(-((nu+1)/2))) )
+}
+
+
 ####--------------------------------------------------------------
 ## gaussian.bmm.plot.1d:  Overlay the posterior predictive density on a histogram
 ##                        of the data.
@@ -3247,7 +3254,7 @@ gaussian.bmm.posterior.predictive.density <- function(x, m, alpha, beta, nu, W, 
 gaussian.bmm.plot.1d <- function(X, m, alpha, beta, nu, W, r, title, xlab, ylab)
 {
   bin.width <- .025
-  N.c <- dim(m)[2]
+  N.c <- dim(m)[1]
 
   proportions <- data.frame(x=X[,1], row.names=NULL, stringsAsFactors=NULL)
   
@@ -3272,13 +3279,15 @@ gaussian.bmm.plot.1d <- function(X, m, alpha, beta, nu, W, r, title, xlab, ylab)
     for (i in 1:n) {
 
       # Evaluate posterior probability at x.
-      ym[k,i] <- gaussian.bmm.component.posterior.predictive.density(x, k, m, alpha, beta, nu, W, rooti)
+      #ym[k,i] <- gaussian.bmm.component.posterior.predictive.density(x, k, m, alpha, beta, nu, W, rooti)
+      ym[k,i] <- ( alpha[k] / sum(alpha) ) * my.dt(x[i], m[k], L[[k]], nu[k] + 1 - D)
+      #ym[k,i] <- ( alpha[k] / sum(alpha) ) * dnorm(x[i], m[k], sqrt(1/L[[k]]))
   
       y[i] <- y[i] + ym[k,i]
     }
   }
 
-  max.posterior.density <- max(ym)
+  max.posterior.density <- max(y)
   # Overlay the histogram of the data on to the beta mixture model fit.
 
   # Set max posterior to max of splinefun.
