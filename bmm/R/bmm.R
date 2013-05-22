@@ -112,12 +112,11 @@ suppressPackageStartupMessages(library(ggplot2))
 ##        following eqn (51).
 ## vbar:  the D x N.c matrix holding values vbar = nu/beta defined
 ##        following eqn (51).
-
 bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alpha0, nu0, beta0, c0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = 0)
 {
   ubar <- mu / alpha
   vbar <- nu / beta
-
+  
   N <- dim(X)[1]
   D <- dim(X)[2]
 
@@ -131,7 +130,7 @@ bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alp
 
     # E_u[ln u] defined following eqn (51).
     E.lnu <- digamma(mu) - log(alpha)
-    
+
     # E_v[ln v] defined following eqn (51).
     E.lnv <- digamma(nu) - log(beta)
     
@@ -179,6 +178,8 @@ bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alp
       for(k in 1:N.c) { r[n,k] = exp(ln.rho[n,k] - row.sum) }
     }
 
+    r <- r + 10^-9
+    
     # r and X will have NAs for items that have been removed.
     # Substitute 0's for these NAs.
     r.na.rows <- is.na(rowSums(r))
@@ -222,9 +223,9 @@ bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alp
     if(verbose > 0) {
       print(E.pi)
     } 
- 
+
     # Convergence test
-    if ( all(abs(E.pi - E.pi.prev) < convergence.threshold) ) {
+    if (( all(abs(E.pi - E.pi.prev) < convergence.threshold) )) {
       break
     }
         
@@ -509,6 +510,7 @@ init.bmm.hyperparameters <- function(X, N.c)
   # Follow Ma and Leijon in setting c_i0 = 0.001 for all i,
   # which ensures that the (numbers of) components are determined primarily
   # from the data, not from the prior.
+  # c is alpha in Fan's notation.
   c0 <- rep(0.001, N.c)
 
   # II.  Choose the initial parameters (element-wise) alpha0 > 0,
@@ -517,12 +519,15 @@ init.bmm.hyperparameters <- function(X, N.c)
   
   # Here we choose alpha0 and beta0 the same ...
   # By choosing the alpha parameter small, we make the prior flat(ter)
+  # alpha0/beta0 is v in Fan's notation
   alpha0 <- matrix(data=0.005, nrow=D, ncol=N.c)
+  #alpha0 <- matrix(data=0.01, nrow=D, ncol=N.c)  
   beta0 <- alpha0
 
   # ... and mu0 and nu0 the same.
   # NB:  with choice mu=1, the gamma prior degenerates to an
   # exponential distribution.
+  # mu/nu is u in Fan's notation
   mu0 <- matrix(data=1, nrow=D, ncol=N.c)
   nu0 <- mu0
 
@@ -620,6 +625,14 @@ init.bmm.parameters <- function(X, N.c, mu0, alpha0, nu0, beta0, c0)
   kmeans.out <- kmeans(X, N.c, nstart=1000)
   kmeans.clusters <- kmeans.out$cluster
   kmeans.centers <- kmeans.out$centers
+
+  # Sort the centers to ease comparison across runs.  No we sort the
+  # clustered results.
+  # Besides, be careful!  This upset the relationship between kmeans.clusters
+  # and kmeans.centers!
+  #kmeans.centers <- kmeans.centers[do.call(order, lapply(1:ncol(kmeans.centers), function(i) kmeans.centers[, i])), ]
+  cat("kmeans initialization:\n")
+  print(kmeans.centers)
 
   r <- matrix(data=0, nrow=N, ncol=N.c)
   for(i in 1:N) {
@@ -1639,7 +1652,7 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     if(verbose) {
       cat("lb = ", lb, " pi = ", E.pi, "\n")
     }
-    
+
     if ( lb.prev > lb ) {
       cat(sprintf("lb decreased from %f to %f!\n", lb.prev, lb))
       # q(status=-1)
@@ -1941,6 +1954,13 @@ init.binomial.bmm.parameters <- function(successes, total.trials, N.c, a0, b0, a
   kmeans.out <- kmeans(successes/total.trials, N.c, nstart=1000)
   kmeans.clusters <- kmeans.out$cluster
   kmeans.centers <- kmeans.out$centers
+
+  # Sort the centers to ease comparison across runs.  No we sort the
+  # clustered results.
+  # Besides, be careful!  This upset the relationship between kmeans.clusters
+  # and kmeans.centers!  #kmeans.centers <- kmeans.centers[do.call(order, lapply(1:ncol(kmeans.centers), function(i) kmeans.centers[, i])), ]
+  cat("kmeans initialization:\n")
+  print(kmeans.centers)
 
   r <- matrix(data=0, nrow=N, ncol=N.c)
   for(i in 1:N) {
@@ -2968,6 +2988,15 @@ init.gaussian.bmm.parameters <- function(X, N.c, m0, alpha0, beta0, nu0, W0)
   kmeans.clusters <- kmeans.out$cluster
   kmeans.centers <- kmeans.out$centers
 
+  # Sort the centers to ease comparison across runs.  No we sort the
+  # clustered results.
+  # Besides, be careful!  This upset the relationship between kmeans.clusters
+  # and kmeans.centers!  
+  # Sort the centers to ease comparison across runs
+  #kmeans.centers <- kmeans.centers[do.call(order, lapply(1:ncol(kmeans.centers), function(i) kmeans.centers[, i])), ]
+  cat("kmeans initialization:\n")
+  print(kmeans.centers)
+  
   r <- matrix(data=0, nrow=N, ncol=N.c)
   for(i in 1:N) {
     r[i,kmeans.clusters[i]]<- 1
