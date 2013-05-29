@@ -9,7 +9,7 @@ Installation instructions
 $ git clone git@github.com:genome/bmm.git
 $ cd bmm/
 $ R CMD build bmm
-$ R CMD INSTALL bmm_0.2.0.tar.gz
+$ R CMD INSTALL bmm_0.3.0.tar.gz
 
 Usage
 ---------------------------------
