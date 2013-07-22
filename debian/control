@@ -1,0 +1,11 @@
+Source: r-cran-bmm
+Section: misc
+Priority: optional
+Maintainer: Chris Miller <cmiller@genome.wustl.edu>
+Build-Depends: debhelper (>= 7.4), r-base-dev (>= 2.10)
+ 
+Package: r-cran-bmm
+Architecture: all
+Depends: bash, r-base (>= 2.10)
+Description: An R package for BMM.
+ The BMM package for R.
