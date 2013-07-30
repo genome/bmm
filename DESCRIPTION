@@ -1,11 +1,11 @@
 Package: bmm
 Title: Variational Bayesian approach to fitting a mixture of Beta
         distributions
-Version: 0.3.0
+Version: 0.3.1
 Author: Brian White
 Description: Variational Bayesian approach to fitting a mixture of Beta distributions
 Maintainer: Brian White <bwhite@genome.wustl.edu>
 LazyLoad: yes
 License: Apache License 2.0 | file LICENSE
 Depends: ggplot2, NORMT3
-Packaged: 2013-05-23 03:41:22 PM; cmiller
+Packaged: 2013-07-30 09:01:55 AM; cmiller

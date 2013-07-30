@@ -112,7 +112,7 @@ suppressPackageStartupMessages(library(ggplot2))
 ##        following eqn (51).
 ## vbar:  the D x N.c matrix holding values vbar = nu/beta defined
 ##        following eqn (51).
-bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alpha0, nu0, beta0, c0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = 0)
+bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, E.pi, mu0, alpha0, nu0, beta0, c0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = 0)
 {
   ubar <- mu / alpha
   vbar <- nu / beta
@@ -121,6 +121,7 @@ bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alp
   D <- dim(X)[2]
 
   E.pi.prev <- rep(0, N.c)
+  E.pi.prev <- E.pi
   
   iteration <- 0
 
@@ -128,6 +129,10 @@ bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alp
   # until convergence
   while(TRUE) {  
 
+    #expected.means <- ubar / ( ubar + vbar )
+    #cat("Expected means:\n")
+    #print(expected.means)
+    
     # E_u[ln u] defined following eqn (51).
     E.lnu <- digamma(mu) - log(alpha)
 
@@ -138,7 +143,7 @@ bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alp
     E.lnpi <- digamma(c) - digamma(sum(c))
   
     # E[pi_i] defined in eqn (53).
-    E.pi <- ( c0 + colSums(r, na.rm=TRUE) ) / ( sum(c0) + N )
+    #E.pi <- ( c0 + colSums(r, na.rm=TRUE) ) / ( sum(c0) + N )
 
     # E_u[(ln u - ln u^bar)^2] defined following eqn (51).
     E.quadratic.u <- ( ( digamma(mu) - log(mu) )^2 ) + trigamma(mu)
@@ -165,8 +170,9 @@ bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alp
     tmp <- colSums((lg.u.v - lg.u - lg.v) + (ubar * (dig.u.v - dig.u) * E.lnu.logubar) + (vbar * (dig.u.v - dig.v) * E.lnv.logvbar) + 0.5 * (ubar^2 * (trig.u.v - trig.u) * E.quadratic.u) + 0.5 * (vbar^2 * (trig.u.v - trig.v) * E.quadratic.v) + ubar * vbar * trig.u.v * E.lnu.logubar * E.lnv.logvbar)
     tmp.matrix <- matrix(data=tmp, nrow=N, ncol=N.c, byrow=TRUE)
     ln.rho <- matrix(data=E.lnpi, nrow=N, ncol=N.c, byrow=TRUE)
+
     ln.rho <- ln.rho + u.logx + v.logx + tmp.matrix
-    
+
     # Responsibilities r defined in eqn (31).
     r <- matrix(data = 0, nrow=N, ncol=N.c)
     for(n in 1:N) {
@@ -179,7 +185,7 @@ bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alp
     }
 
     r <- r + 10^-9
-    
+
     # r and X will have NAs for items that have been removed.
     # Substitute 0's for these NAs.
     r.na.rows <- is.na(rowSums(r))
@@ -196,6 +202,9 @@ bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alp
     }
     r.no.na <- r[!r.na.rows,]
     X.no.na <- X[!X.na.rows,]
+
+    # E[pi_i] defined in eqn (53).
+    E.pi <- ( c0 + colSums(r, na.rm=TRUE) ) / ( sum(c0) + N )
     
     # Update alpha as defined in eqn (49).
     alpha <- alpha0 - t(t(r.no.na) %*% log(X.no.na))
@@ -371,13 +380,15 @@ bmm <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alpha0, nu0, beta0, c0, 
   total.iterations <- 0 
   D <- dim(X)[2]
 
+  E.pi <- rep(1/N.c, N.c)
+  
   while(TRUE) {
 
     if(verbose){
       print(r)
     }
     
-    bmm.res <- bmm.fixed.num.components(X, N.c, r, mu, alpha, nu, beta, c, mu0, alpha0, nu0, beta0, c0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = verbose)
+    bmm.res <- bmm.fixed.num.components(X, N.c, r, mu, alpha, nu, beta, c, E.pi, mu0, alpha0, nu0, beta0, c0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = verbose)
     if(bmm.res$retVal != 0) {
       cat("Failed to converge!\n")
       q(status=-1)
@@ -521,6 +532,7 @@ init.bmm.hyperparameters <- function(X, N.c)
   # By choosing the alpha parameter small, we make the prior flat(ter)
   # alpha0/beta0 is v in Fan's notation
   alpha0 <- matrix(data=0.005, nrow=D, ncol=N.c)
+  #alpha0 <- matrix(data=0.0075, nrow=D, ncol=N.c)    
   #alpha0 <- matrix(data=0.01, nrow=D, ncol=N.c)  
   beta0 <- alpha0
 
@@ -616,7 +628,7 @@ init.bmm.hyperparameters <- function(X, N.c)
 ##                   items to a cluster, as determined by kmeans.
 ## kmeans.centers:  an N.c x D matrix holding the centers of the N.c
 ##                  clusters/components determined by kmeans
-init.bmm.parameters <- function(X, N.c, mu0, alpha0, nu0, beta0, c0)
+init.bmm.parameters <- function(X, N.c, mu0, alpha0, nu0, beta0, c0, verbose=0)
 {
   N <- dim(X)[1]
   D <- dim(X)[2]
@@ -631,14 +643,110 @@ init.bmm.parameters <- function(X, N.c, mu0, alpha0, nu0, beta0, c0)
   # Besides, be careful!  This upset the relationship between kmeans.clusters
   # and kmeans.centers!
   #kmeans.centers <- kmeans.centers[do.call(order, lapply(1:ncol(kmeans.centers), function(i) kmeans.centers[, i])), ]
-  cat("kmeans initialization:\n")
-  print(kmeans.centers)
+  if(verbose){
+    cat("kmeans initialization:\n")
+    print(kmeans.centers)
+  }
+  # This logic (should) follow that of Fan in DMM.m in initializing
+  # the model.
+  # (1) Initialize responsibilities with k-means
+  # (2) Set the parameters to the hyperparameters
+  # (3) E step using those parameters (without updating responsibilities)
+  # (4) M step to update parameters
 
   r <- matrix(data=0, nrow=N, ncol=N.c)
   for(i in 1:N) {
     r[i,kmeans.clusters[i]]<- 1
   }
 
+  # Initialize parameters to hyperparameters
+  mu <- mu0
+  nu <- nu0
+  beta <- beta0
+  alpha <- alpha0  
+
+  # Set initial alpha and beta (NB: not the prior hyperparameters) according
+  # to the means found by kmeans.  Keep mu and nu at their
+  # prior values.  To do so:
+  # E[proportion] = ubar / ( ubar + vbar ),
+  #   where ubar = mu / alpha and vbar = nu / beta
+  # For now, keep beta at prior as well.
+  # Uncommenting this also seems to work fairly well.
+  alpha <- ( mu * beta * ( 1 - t(kmeans.centers) ) ) / ( t(kmeans.centers) * nu )
+
+  c <- c0 + colSums(r, na.rm=TRUE)
+  
+  # E.pi <- ( c0 + colSums(r, na.rm=TRUE) ) / ( sum(c0) + N )
+  # NB: E.pi is only used for iteration, to test for convergence.
+  # When it is needed for a calculation, it is computed from the parameters.
+  E.pi <- rep(0, N.c)  
+
+  ubar <- mu / alpha
+  vbar <- nu / beta
+
+  # E_u[ln u] defined following eqn (51).
+  E.lnu <- digamma(mu) - log(alpha)
+
+  # E_v[ln v] defined following eqn (51).
+  E.lnv <- digamma(nu) - log(beta)
+    
+  # Update c as defined in eqn (47).
+  c <- c0 + colSums(r, na.rm=TRUE)
+
+  # E[ln pi_i] defined following eqn (51).
+  E.lnpi <- digamma(c) - digamma(sum(c))
+  
+  # E[pi_i] defined in eqn (53).
+  #E.pi <- ( c0 + colSums(r, na.rm=TRUE) ) / ( sum(c0) + N )
+  # NB: E.pi is only used for iteration, to test for convergence.
+  # When it is needed for a calculation, it is computed from the parameters.
+  E.pi <- rep(0, N.c)  
+  
+  # E_u[(ln u - ln u^bar)^2] defined following eqn (51).
+  E.quadratic.u <- ( ( digamma(mu) - log(mu) )^2 ) + trigamma(mu)
+  
+  # E_v[(ln v - ln v^bar)^2] defined following eqn (51).
+  E.quadratic.v <- ( ( digamma(nu) - log(nu) )^2 ) + trigamma(nu)
+    
+  # Define some temporary values to be used below.
+  lg.u.v <- lgamma(ubar + vbar)
+  lg.u <- lgamma(ubar)
+  lg.v <- lgamma(vbar)
+  dig.u.v <- digamma(ubar + vbar)
+  dig.u <- digamma(ubar)
+  dig.v <- digamma(vbar)
+  trig.u.v <- trigamma(ubar + vbar)
+  trig.u <- trigamma(ubar)
+  trig.v <- trigamma(vbar)
+  E.lnv.logvbar <- E.lnv - log(vbar)
+  E.lnu.logubar <- E.lnu - log(ubar)
+  u.logx <- log(X) %*% (ubar-1)
+  v.logx <- log(1-X) %*% (vbar-1)
+
+  # E[pi_i] defined in eqn (53).
+  #E.pi <- ( c0 + colSums(r, na.rm=TRUE) ) / ( sum(c0) + N )
+    
+  # Update alpha as defined in eqn (49).
+  alpha <- alpha0 - t(t(r) %*% log(X))
+
+  # Update beta as defined in eqn (51).
+  # beta <- beta0 - t(t(r) %*% log(1-X))
+  beta <- beta0 - t(t(r) %*% log(1-X))
+  
+  # Update mu as defined in eqn (48).
+  v.trig.E.log <- vbar * trig.u.v * E.lnv.logvbar
+  r.colsums <- matrix(data=colSums(r, na.rm=TRUE), nrow=D, ncol=N.c, byrow=TRUE)
+  mu <- mu0 + r.colsums * ubar * ( dig.u.v - dig.u + v.trig.E.log )
+     
+  # Update nu as defined in eqn (50).
+  u.trig.E.log <- ubar * trig.u.v * E.lnu.logubar
+  nu <- nu0 + r.colsums * vbar * ( dig.u.v - dig.v + u.trig.E.log )
+
+  retList <- list("mu" = mu, "alpha" = alpha, "nu" = nu, "beta" = beta, "c" = c, "E.pi" = E.pi, "r" = r, "kmeans.centers" = kmeans.centers, "kmeans.clusters" = kmeans.clusters)
+  return(retList)
+  
+  # Old logic below.
+  
   # Set initial alpha and beta (NB: not the prior hyperparameters) according
   # to the means found by kmeans.  Keep mu and nu at their
   # prior values.  To do so:
@@ -649,16 +757,22 @@ init.bmm.parameters <- function(X, N.c, mu0, alpha0, nu0, beta0, c0)
   nu <- nu0
   beta <- beta0
   alpha <- ( mu * beta * ( 1 - t(kmeans.centers) ) ) / ( t(kmeans.centers) * nu )
+  
+  c <- c0 + colSums(r, na.rm=TRUE)
+  
+  # E.pi <- ( c0 + colSums(r, na.rm=TRUE) ) / ( sum(c0) + N )
+  # NB: E.pi is only used for iteration, to test for convergence.
+  # When it is needed for a calculation, it is computed from the parameters.
+  E.pi <- rep(0, N.c)  
+
+  #retList <- list("mu" = mu, "alpha" = alpha, "nu" = nu, "beta" = beta, "c" = c, "E.pi" = E.pi, "r" = r, "kmeans.centers" = kmeans.centers, "kmeans.clusters" = kmeans.clusters)
+  #return(retList)
 
   ubar <- mu / alpha
   vbar <- nu / beta
 
-  c <- c0 + colSums(r, na.rm=TRUE) 
-
   E.lnu <- digamma(mu) - log(alpha)
   E.lnv <- digamma(nu) - log(beta)
-
-  E.pi <- ( c0 + colSums(r, na.rm=TRUE) ) / ( sum(c0) + N )
 
   # Update alpha as defined in eqn (49).
   alpha <- alpha0 - t(t(r) %*% log(X))
@@ -666,6 +780,13 @@ init.bmm.parameters <- function(X, N.c, mu0, alpha0, nu0, beta0, c0)
   # Update beta as defined in eqn (51).
   beta <- beta0 - t(t(r) %*% log(1-X))
   
+  ubar <- mu / alpha
+  vbar <- nu / beta
+
+  E.lnu <- digamma(mu) - log(alpha)
+  E.lnv <- digamma(nu) - log(beta)
+
+
   trig.u.v <- trigamma(ubar + vbar)
   E.lnv.logvbar <- E.lnv - log(vbar)
   E.lnu.logubar <- E.lnu - log(ubar)
@@ -682,6 +803,8 @@ init.bmm.parameters <- function(X, N.c, mu0, alpha0, nu0, beta0, c0)
   u.trig.E.log <- ubar * trig.u.v * E.lnu.logubar
   nu <- nu0 + r.colsums * vbar * ( dig.u.v - dig.v + u.trig.E.log )
 
+  c <- c0 + colSums(r, na.rm=TRUE) 
+  
   retList <- list("mu" = mu, "alpha" = alpha, "nu" = nu, "beta" = beta, "c" = c, "E.pi" = E.pi, "r" = r, "kmeans.centers" = kmeans.centers, "kmeans.clusters" = kmeans.clusters)
   return(retList)
 
@@ -1945,7 +2068,7 @@ init.binomial.bmm.hyperparameters <- function(successes, total.trials, N.c)
 ##                   items to a cluster, as determined by kmeans.
 ## kmeans.centers:  an N.c x D matrix holding the centers of the N.c
 ##                  clusters/components determined by kmeans
-init.binomial.bmm.parameters <- function(successes, total.trials, N.c, a0, b0, alpha0) 
+init.binomial.bmm.parameters <- function(successes, total.trials, N.c, a0, b0, alpha0, verbose=0) 
 {
   N <- dim(successes)[1]
   D <- dim(successes)[2]
@@ -1959,8 +2082,10 @@ init.binomial.bmm.parameters <- function(successes, total.trials, N.c, a0, b0, a
   # clustered results.
   # Besides, be careful!  This upset the relationship between kmeans.clusters
   # and kmeans.centers!  #kmeans.centers <- kmeans.centers[do.call(order, lapply(1:ncol(kmeans.centers), function(i) kmeans.centers[, i])), ]
-  cat("kmeans initialization:\n")
-  print(kmeans.centers)
+  if(verbose){
+    cat("kmeans initialization:\n")
+    print(kmeans.centers)
+  }
 
   r <- matrix(data=0, nrow=N, ncol=N.c)
   for(i in 1:N) {
@@ -1986,7 +2111,7 @@ init.binomial.bmm.parameters <- function(successes, total.trials, N.c, a0, b0, a
   a <- b * gamma
 
   alpha <- alpha0 + colSums(r, na.rm=TRUE) 
-
+  
   retList <- list("a" = a, "b" = b, "alpha" = alpha, "r" = r, "kmeans.centers" = kmeans.centers, "kmeans.clusters" = kmeans.clusters)
   return(retList)
 
@@ -2377,11 +2502,16 @@ gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, 
     }
   }
 
+  # Ensure things don't get too small.  There are sometimes
+  # problems with many initial clusters--I assume we divide
+  # by r = zero somewhere.
+  r <- r + 10^-9
+  
   # Bishop 10.51
   Nk <- colSums(r)
 
   if ( any(Nk <= 0) ) {
-    print("Die!\n")
+    print("Nk <= 0: Die!\n")
     q(status=-1)
   }
 
@@ -2978,7 +3108,7 @@ init.gaussian.bmm.hyperparameters <- function(X, N.c)
 ##                   items to a cluster, as determined by kmeans.
 ## kmeans.centers:  an N.c x D matrix holding the centers of the N.c
 ##                  clusters/components determined by kmeans
-init.gaussian.bmm.parameters <- function(X, N.c, m0, alpha0, beta0, nu0, W0)
+init.gaussian.bmm.parameters <- function(X, N.c, m0, alpha0, beta0, nu0, W0, verbose=0)
 {
   N <- dim(X)[1]
   D <- dim(X)[2]
@@ -2994,9 +3124,10 @@ init.gaussian.bmm.parameters <- function(X, N.c, m0, alpha0, beta0, nu0, W0)
   # and kmeans.centers!  
   # Sort the centers to ease comparison across runs
   #kmeans.centers <- kmeans.centers[do.call(order, lapply(1:ncol(kmeans.centers), function(i) kmeans.centers[, i])), ]
-  cat("kmeans initialization:\n")
-  print(kmeans.centers)
-  
+  if(verbose){
+    cat("kmeans initialization:\n")
+    print(kmeans.centers)
+  }
   r <- matrix(data=0, nrow=N, ncol=N.c)
   for(i in 1:N) {
     r[i,kmeans.clusters[i]]<- 1
@@ -3110,6 +3241,7 @@ gaussian.bmm.narrowest.mean.interval.about.centers <- function(m, alpha, beta, n
     # i.e., provide the 1-sigma confidence interval of the posterior
     # predictive density (Bishop eqn 10.81)--a Student t.
     Lkinv = solve(L[[k]])
+    # According to Bishop (B.70), covariance matrix = ( nu / ( nu - 2 ) ) * Lambda^-1
     cov.matrix <- ( ( nu[k] + 1 - D ) / ( nu[k] + 1 - D - 2 ) ) * Lkinv
     for(l in 1:D){
       centers[l,k] <- m[k,l]
@@ -3169,6 +3301,7 @@ gaussian.bmm.narrowest.proportion.interval.about.centers <- function(m, alpha, b
     # i.e., provide the 1-sigma confidence interval of the posterior
     # predictive density (Bishop eqn 10.81)--a Student t.
     Lkinv = solve(L[[k]])
+    # According to Bishop (B.70), covariance matrix = ( nu / ( nu - 2 ) ) * Lambda^-1    
     cov.matrix <- ( ( nu[k] + 1 - D ) / ( nu[k] + 1 - D - 2 ) ) * Lkinv
     for(l in 1:D){
       centers[l,k] <- m[k,l]
