@@ -24,7 +24,7 @@
    Notation and references here follow that used in Ma and Leijon.
 }
 \usage{
-   bmm.fixed.num.components(X, N.c, r, mu, alpha, nu, beta, c, 
+   bmm.fixed.num.components(X, N.c, r, mu, alpha, nu, beta, c, E.pi, 
                             mu0, alpha0, nu0, beta0, c0, 
                             convergence.threshold = 10^-4,
                             max.iterations = 10000,
@@ -87,6 +87,10 @@
        NB: this is the initial value c, which is updated upon iteration.
        It is not (necessarily) the same as the hyperparameter c0, which 
        is unchanged by iteration.
+  }
+  \item{E.pi}{
+       the D-vector holding the values E[pi], i.e., the expected values
+       of the mixing coefficients, defined in eqn (53).
   }
   \item{mu0, alpha0, nu0, beta0, c0}{  
        the hyperparameters corresponding to the

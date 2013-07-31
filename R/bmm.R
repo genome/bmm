@@ -1417,6 +1417,12 @@ bmm.plot.2d <- function(X, mu, alpha, nu, beta, E.pi, r, title, xlab, ylab)
 
   centers <- data.frame(x=SEM.centers[,1], y=SEM.centers[,2], row.names=NULL, stringsAsFactors=NULL)
 
+  # R CMD check does not understand that the right-hand side of the = in
+  # aes commands is referring, not to global or local variables, but to
+  # verbatim names in the data argument.  Get around this by creating
+  # variables with those names--which is irrelevant to the ggplot code.
+  x <- NULL
+  y <- NULL
   g <- ggplot(data = proportions, aes(x=x, y=y)) + ggtitle(title) + xlab(xlab) + ylab(ylab) + geom_point(data = proportions, aes(x=x, y=y), shape=clusters, colour=clusters) + geom_point(data = centers, aes(x=x, y=y), size=3, colour='blue') 
 
   g <- g + theme_bw() + theme(axis.line = theme_segment(colour = "black"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank()) 
@@ -2250,7 +2256,7 @@ binomial.bmm.component.posterior.predictive.density <- function(x, eta, a, b, pi
 
 binomial.bmm.posterior.predictive.density <- function(x, eta, a, b, pi)
 {
-  N.c <- length(mu)
+  N.c <- length(pi)
   y <- 0
   for(k in 1:N.c) {
     y <- y + binomial.bmm.component.posterior.predictive.density(x, eta, a[k], b[k], pi[k])
@@ -2381,6 +2387,12 @@ binomial.bmm.plot.2d <- function(successes, total.trials, a, b, r, title, xlab, 
 
   centers <- data.frame(x=SEM.centers[,1], y=SEM.centers[,2], row.names=NULL, stringsAsFactors=NULL)
 
+  # R CMD check does not understand that the right-hand side of the = in
+  # aes commands is referring, not to global or local variables, but to
+  # verbatim names in the data argument.  Get around this by creating
+  # variables with those names--which is irrelevant to the ggplot code.
+  x <- NULL
+  y <- NULL
   g <- ggplot(data = proportions, aes(x=x, y=y)) + ggtitle(title) + xlab(xlab) + ylab(ylab) + geom_point(data = proportions, aes(x=x, y=y), shape=clusters, colour=clusters) + geom_point(data = centers, aes(x=x, y=y), size=3, colour='blue') 
 
   g <- g + theme_bw() + theme(axis.line = theme_segment(colour = "black"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank()) 
@@ -3389,6 +3401,7 @@ gaussian.bmm.component.posterior.predictive.density <- function(x, k, m, alpha, 
 gaussian.bmm.posterior.predictive.density <- function(x, m, alpha, beta, nu, W, rooti)
 {
   y <- 0
+  N.c <- length(nu)
   for(k in 1:N.c) {
     y <- y + gaussian.bmm.component.posterior.predictive.density(x, k, m, alpha, beta, nu, W, rooti)
   }
@@ -3578,6 +3591,13 @@ gaussian.bmm.plot.2d <- function(X, m, alpha, beta, nu, W, r, title, xlab, ylab)
 
   centers <- data.frame(x=SEM.centers[,1], y=SEM.centers[,2], row.names=NULL, stringsAsFactors=NULL)
 
+  
+  # R CMD check does not understand that the right-hand side of the = in
+  # aes commands is referring, not to global or local variables, but to
+  # verbatim names in the data argument.  Get around this by creating
+  # variables with those names--which is irrelevant to the ggplot code.
+  x <- NULL
+  y <- NULL
   g <- ggplot(data = proportions, aes(x=x, y=y)) + ggtitle(title) + xlab(xlab) + ylab(ylab) + geom_point(data = proportions, aes(x=x, y=y), shape=clusters, colour=clusters) + geom_point(data = centers, aes(x=x, y=y), size=3, colour='blue') 
 
   g <- g + theme_bw() + theme(axis.line = theme_segment(colour = "black"), panel.grid.major = element_blank(), panel.grid.minor = element_blank(), panel.border = element_blank(), panel.background = element_blank()) 

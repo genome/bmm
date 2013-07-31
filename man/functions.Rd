@@ -1,7 +1,6 @@
 \name{functions}
 \alias{define.narrowest.interval.including.pt}
 \alias{angle}
-\alias{binomial.bmm}
 \alias{binomial.bmm.component.posterior.predictive.density}
 \alias{binomial.bmm.fixed.num.components}
 \alias{binomial.bmm.narrowest.mean.interval.about.centers}

@@ -1,7 +1,7 @@
 \name{bmm}
 \alias{bmm}
 \title{
-  bmm:  Fits a Beta mixture with fixed number of components using a variational Bayesian approach
+  bmm:  Fits a Beta mixture using a variational Bayesian approach
 }
 \description{
    Use a variational Bayesian approach to fit a mixture of Beta 
@@ -32,7 +32,7 @@
                             convergence.threshold = 10^-4,
                             max.iterations = 10000,
                             verbose = 0,
-                            pi.convergence = 10^-2)
+                            pi.threshold = 10^-2)
 }
 \arguments{
   \item{X}{

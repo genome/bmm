@@ -16,7 +16,7 @@
 }
 
 \usage{
-   init.bmm.parameters(X, N.c, mu0, alpha0, nu0, beta0, c0)
+   init.bmm.parameters(X, N.c, mu0, alpha0, nu0, beta0, c0, verbose=0)
 }
 \arguments{
   \item{X}{
@@ -57,6 +57,10 @@
       parameters of the Dirichlet distribution over the mixing 
       coefficients pi.  Introduced in eqn (19).
   }
+  \item{verbose}{
+       output progress in terms of mixing coefficient (expected) values if 1.
+  }
+    
 }
 
 \details{}
