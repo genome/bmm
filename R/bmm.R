@@ -195,10 +195,9 @@ bmm.fixed.num.components <- function(X, N.c, r, mu, alpha, nu, beta, c, E.pi, mu
       print(X.na.rows)
     }
     if(any(r.na.rows != X.na.rows)) {
-      cat(sprintf("NA's inconsistent between r and X matrices\n"))
       print(r)
       print(X)
-      q(status=-1)
+      stop(sprintf("NA's inconsistent between r and X matrices\n"))
     }
     r.no.na <- r[!r.na.rows,]
     X.no.na <- X[!X.na.rows,]
@@ -390,8 +389,7 @@ bmm <- function(X, N.c, r, mu, alpha, nu, beta, c, mu0, alpha0, nu0, beta0, c0, 
     
     bmm.res <- bmm.fixed.num.components(X, N.c, r, mu, alpha, nu, beta, c, E.pi, mu0, alpha0, nu0, beta0, c0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = verbose)
     if(bmm.res$retVal != 0) {
-      cat("Failed to converge!\n")
-      q(status=-1)
+      stop("Failed to converge!\n")
     }
 
     mu <- bmm.res$mu
@@ -1537,29 +1535,26 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
 
   Nk <- colSums(r)
   if (any(is.na(Nk))) {
-    print("Nk is NA")
     print(Nk)
-    q(status=-1)
+    stop("Nk is NA")
   }
     
   # Calculate xbar_km
   Nk.xbar <- t(r) %*% X
   if (any(is.na(Nk.xbar))) {
-    print("Nk.xbar is NA")
     print(Nk.xbar)
     print("r")
     print(r)
     print("X")
     print(X)
-    q(status=-1)
+    stop("Nk.xbar is NA")
   }
     
   # Calculate etabar_km
   Nk.etabar <- t(r) %*% eta
   if (any(is.na(Nk.etabar))) {
-    print("Nk.etabar is NA")
     print(Nk.etabar)
-    q(status=-1)
+    stop("Nk.etabar is NA")
   }
 
   lb.prev <- -Inf
@@ -1572,9 +1567,8 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     # Calculate alpha_k
     alpha <- alpha0 + Nk
     if (any(is.na(alpha))) {
-      print("alpha is NA")
       print(alpha)
-      q(status=-1)
+      stop("alpha is NA")
     }
     
     # Calculate a_km
@@ -1582,34 +1576,29 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     a <- ( a0 - 1 ) + Nk.xbar
     b <- ( b0 - 1 ) + Nk.etabar - Nk.xbar
     if (any(is.na(a))) {
-      print("a is NA")
       print(a)
-      q(status=-1)
+      stop("a is NA")
     }
    
     if (any(is.na(b))) {
-      print("b is NA")
       print(b)
-      q(status=-1)
+      stop("b is NA")
     } 
 
     if ( any(a <= 0) ) {
-      print("a <= 0")
       print(a)
       #print(Nk.xbar)
       #print(r)
       print(alpha/sum(alpha))
-      q(status=-1)
+      stop("a <= 0")
     }
 
     if ( any(b <= 0) ) {
-      print("b <= 0")
-      q(status=-1)
+      stop("b <= 0")
     }
 
     if ( any(alpha < 0) ) {
-      print("alpha < 0")
-      q(status=-1)
+      stop("alpha < 0")
     }    
     
     #    (2) Compute expectations
@@ -1617,29 +1606,26 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     # Calculate E_mu[ln mu_km]
     E.ln.mu <- digamma(a) - digamma(a + b)
     if (any(is.na(E.ln.mu))) {
-      print("E.ln.mu is NA")
       print(E.ln.mu)
       print("a")
       print(a)
       print("b")
       print(b)
-      q(status=-1)
+      stop("E.ln.mu is NA")
     }
   
     # Calculate E_mu[ln ( 1 - mu_km )]
     E.ln.one.minus.mu <- digamma(b) - digamma(a + b)
     if (any(is.na(E.ln.one.minus.mu))) {
-      print("E.ln.one.minus.mu is NA")
       print(E.ln.one.minus.mu)
-      q(status=-1)
+      stop("E.ln.one.minus.mu is NA")
     }
     
     # Calculate E_pi[ln pi_k]
     E.lnpi <- digamma(alpha) - digamma(sum(alpha))
     if (any(is.na(E.lnpi))) {
-      print("E.lnpi is NA")
       print(E.lnpi)
-      q(status=-1)
+      stop("E.lnpi is NA")
     }
 
     
@@ -1654,9 +1640,8 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     ln.rho <- ln.rho + X %*% t(E.ln.mu) + eta %*% t(E.ln.one.minus.mu) - X %*% t(E.ln.one.minus.mu) 
     ln.rho <- ln.rho + ( lgamma(eta + 1) %*% one.matrix ) - ( lgamma(eta - X + 1) %*% one.matrix ) - ( lgamma(X + 1) %*% one.matrix )
     if (any(is.na(ln.rho))) {
-      print("ln.rho is NA")
       print(ln.rho)
-      q(status=-1)
+      stop("ln.rho is NA")
     }
 
     r <- matrix(data = 0, nrow=N, ncol=N.c)
@@ -1670,9 +1655,8 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     }
 
     if (any(is.na(r))) {
-      print("r is NA")
       print(r)
-      q(status=-1)
+      stop("r is NA")
     }
     
     #    (4) Compute statistics
@@ -1683,29 +1667,26 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
 
     Nk <- colSums(r)
     if (any(is.na(Nk))) {
-      print("Nk is NA")
       print(Nk)
-      q(status=-1)
+      stop("Nk is NA")
     }
     
     # Calculate xbar_km
     Nk.xbar <- t(r) %*% X
     if (any(is.na(Nk.xbar))) {
-      print("Nk.xbar is NA")
       print(Nk.xbar)
       print("r")
       print(r)
       print("X")
       print(X)
-      q(status=-1)
+      stop("Nk.xbar is NA")
     }
     
     # Calculate etabar_km
     Nk.etabar <- t(r) %*% eta
     if (any(is.na(Nk.etabar))) {
-      print("Nk.etabar is NA")
       print(Nk.etabar)
-      q(status=-1)
+      stop("Nk.etabar is NA")
     }
     
     #    (5) Compute bound
@@ -1736,38 +1717,31 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
     E.ln.q.mu <- sum( lgamma(a+b) - lgamma(a) - lgamma(b) + ((a-1)*E.ln.mu) + ((b-1)*E.ln.one.minus.mu) )
 
     if (any(is.na(E.ln.p.X.Z.mu))) {
-      print("E.ln.p.X.Z.mu is NA")
-      q(status=-1)
+      stop("E.ln.p.X.Z.mu is NA")
     }
 
     if (any(is.na(E.ln.p.Z.pi))) {
-      print("E.ln.p.Z.pi is NA")
-      q(status=-1)
+      stop("E.ln.p.Z.pi is NA")
     }
 
     if (any(is.na(E.ln.p.pi))) {
-      print("E.ln.p.pi is NA")
-      q(status=-1)
+      stop("E.ln.p.pi is NA")
     }
 
     if (any(is.na(E.ln.p.mu))) {
-      print("E.ln.p.mu is NA")
-      q(status=-1)
+      stop("E.ln.p.mu is NA")
     }
 
     if (any(is.na(E.ln.q.Z))) {
-      print("E.ln.q.Z is NA")
-      q(status=-1)
+      stop("E.ln.q.Z is NA")
     }
 
     if (any(is.na(E.ln.q.pi))) {
-      print("E.ln.q.pi is NA")
-      q(status=-1)
+      stop("E.ln.q.pi is NA")
     }
 
     if (any(is.na(E.ln.q.mu))) {
-      print("E.ln.q.mu is NA")
-      q(status=-1)
+      stop("E.ln.q.mu is NA")
     }
 
     lb <- E.ln.p.X.Z.mu + E.ln.p.Z.pi + E.ln.p.pi + E.ln.p.mu - E.ln.q.Z - E.ln.q.pi - E.ln.q.mu 
@@ -1784,7 +1758,6 @@ binomial.bmm.fixed.num.components <- function(X, eta, N.c, r, a, b, alpha, a0, b
 
     if ( lb.prev > lb ) {
       cat(sprintf("lb decreased from %f to %f!\n", lb.prev, lb))
-      # q(status=-1)
     }
     if ( abs( ( lb - lb.prev ) / lb ) < convergence.threshold ) { break }
 
@@ -1907,8 +1880,7 @@ binomial.bmm <- function(successes, total.trials, N.c, r, a, b, alpha, a0, b0, a
     
     bmm.res <- binomial.bmm.fixed.num.components(successes, total.trials, N.c, r, a, b, alpha, a0, b0, alpha0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = verbose)
     if(bmm.res$retVal != 0) {
-      cat("Failed to converge!\n")
-      q(status=-1)
+      stop("Failed to converge!\n")
     }
 
     a <- bmm.res$a
@@ -2510,7 +2482,7 @@ gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, 
       print(W0[[k]])
       cat("W0inv: \n")
       print(W0inv[[k]])
-      q(status=-1)
+      stop("Inversion failed")
     }
   }
 
@@ -2523,8 +2495,7 @@ gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, 
   Nk <- colSums(r)
 
   if ( any(Nk <= 0) ) {
-    print("Nk <= 0: Die!\n")
-    q(status=-1)
+    stop("Nk <= 0: Die!\n")
   }
 
   # Bishop 10.52
@@ -2590,7 +2561,7 @@ gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, 
         print(W[[k]])
         cat("Winv: \n")
         print(Winv)
-        q()
+        stop("Inversion failed\n")
       }
     }
   
@@ -2657,10 +2628,8 @@ gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, 
     ln.rho <- pi.matrix + kappa.matrix - const.matrix - E.quadratic 
       
     if (any(is.na(ln.rho))) {
-      print("ln.rho is NA")
       print(ln.rho)
-      warnings()
-      q(status=0)
+      stop("ln.rho is NA")
     }        
   
     # Bishop eqn 10.67
@@ -2676,9 +2645,8 @@ gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, 
     }
 
     if (any(is.na(r))) {
-      print("r is NA")
       print(r)
-      q(status=-1)
+      stop("r is NA")
     }
     
     if ( verbose == TRUE ) {
@@ -2915,8 +2883,7 @@ gaussian.bmm <- function(X, N.c, r, m, alpha, beta, nu, W, m0, alpha0, beta0, nu
     bmm.res <- gaussian.bmm.fixed.num.components(X, N.c, r, m, alpha, beta, nu, W, m0, alpha0, beta0, nu0, W0, convergence.threshold, max.iterations, verbose)
     
     if(bmm.res$retVal != 0) {
-      cat("Failed to converge!\n")
-      q(status=-1)
+      stop("Failed to converge!\n")
     }
 
     m <- bmm.res$m
@@ -3224,8 +3191,7 @@ gaussian.bmm.calculate.posterior.predictive.precision <- function(m, alpha, beta
 gaussian.bmm.narrowest.mean.interval.about.centers <- function(m, alpha, beta, nu, W, proportion) 
 {
   if(abs(proportion - .68) > .01) {
-    cat("gaussian.bmm.narrowest.mean.interval.about.centers only implemented for 1SD = 68%.", proportion, "not supported\n")
-    q(status=-1)
+    stop("gaussian.bmm.narrowest.mean.interval.about.centers only implemented for 1SD = 68%.", proportion, "not supported\n")
   }
 
   D <- dim(m)[2]
@@ -3296,8 +3262,7 @@ gaussian.bmm.narrowest.mean.interval.about.centers <- function(m, alpha, beta, n
 gaussian.bmm.narrowest.proportion.interval.about.centers <- function(m, alpha, beta, nu, W, proportion) 
 {
   if(abs(proportion - .68) > .01) {
-    cat("gaussian.bmm.narrowest.mean.interval.about.centers only implemented for 1SD = 68%.", proportion, "not supported\n")
-    q(status=-1)
+    stop("gaussian.bmm.narrowest.mean.interval.about.centers only implemented for 1SD = 68%.", proportion, "not supported\n")
   }
 
   L <- gaussian.bmm.calculate.posterior.predictive.precision(m, alpha, beta, nu, W)
@@ -3367,8 +3332,7 @@ gaussian.bmm.component.posterior.predictive.density <- function(x, k, m, alpha, 
     y <- ( alpha[k] / sum(alpha) ) * my.dt(x, m[k], L[[k]], nu[k] + 1 - D)
     return(y)
   }
-  print("Untested lndMvst")
-  q(status=-1)
+  stop("Untested lndMvst")
   #suppressPackageStartupMessages(library("bayesm")) # for lndMvst
   #y <- ( alpha[k] / sum(alpha) ) * lndMvst(x, nu=(nu[k]+1-D), mu=m[k,], rooti=rooti[[k]])
   
