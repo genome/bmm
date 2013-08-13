@@ -39,16 +39,11 @@
   }
 }
 
-\details{
-}
-
 \value{
    a vector of length num.samples holding proportions sampled from the  
    posterior distribution of the component and dimension of the Beta 
    mixture model indicated by the input parameters.
 }
 
-\examples{
-}
 
 

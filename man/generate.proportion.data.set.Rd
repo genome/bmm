@@ -25,12 +25,7 @@
   \item{D}{the number of dimensions of the data set}
 }
 
-\details{
-}
-
 \value{
   an N x D matrix of proportions
 }
 
-\examples{
-}

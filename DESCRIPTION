@@ -8,4 +8,4 @@ Maintainer: Brian White <bwhite@genome.wustl.edu>
 LazyLoad: yes
 License: Apache License 2.0 | file LICENSE
 Depends: ggplot2, NORMT3
-Packaged: 2013-08-13 12:24:27 PM; bwhite
+Packaged: 2013-08-13 01:05:21 PM; bwhite

@@ -67,15 +67,10 @@
    }
 }
 
-\details{
-}
-
 \value{
    ggplot object displaying the clustered data and "1-sigma" contour intervals
    for the standard error of the mean and for the standard error
 }
 
-\examples{
-}
 
 

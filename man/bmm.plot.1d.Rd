@@ -66,15 +66,10 @@
    }
 }
 
-\details{
-}
-
 \value{
    gplot object overlaying the posterior predictive density on a histogram
    of the data.
 }
 
-\examples{
-}
 
 

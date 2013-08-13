@@ -114,8 +114,6 @@
   }
 }
 
-\details{}
-
 \value{
   A list with the following entries:
   \item{retVal}{
@@ -194,5 +192,4 @@
        following eqn (51).
   }
 }
-\examples{}
 

@@ -13,7 +13,8 @@
 }
 
 \usage{
-  bmm.component.posterior.predictive.density(x, mu, alpha, nu, beta, pi, num.samples = 1000)
+  bmm.component.posterior.predictive.density(x, mu, alpha, nu, beta, pi, 
+                                             num.samples = 1000)
 }
 
 \arguments{
@@ -45,15 +46,10 @@
    }
 }
 
-\details{
-}
-
 \value{
   the posterior preditive density at x for the specified component
 }
 
-\examples{
-}
 
 
 

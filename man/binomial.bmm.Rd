@@ -14,7 +14,9 @@
   discarded and the clustering is run to convergence again.
 }
 \usage{
-  binomial.bmm(successes, total.trials, N.c, r, a, b, alpha,a0, b0, alpha0, convergence.threshold = 10^-4, max.iterations = 10000, verbose = 0, pi.threshold = 10^-2)
+  binomial.bmm(successes, total.trials, N.c, r, a, b, alpha,
+               a0, b0, alpha0, convergence.threshold = 10^-4, 
+               max.iterations = 10000, verbose = 0, pi.threshold = 10^-2)
 }
 \arguments{
   \item{successes}{
@@ -70,8 +72,6 @@
   }
 }
 
-\details{}
-
 \value{
   A list with the following entries:
   \item{retVal}{
@@ -107,4 +107,3 @@
     of the mixing coefficients, defined in eqn (53).
   }
 }
-\examples{}

@@ -31,9 +31,6 @@
   }
 }
 
-\details{
-}
-
 \value{
   Returns a list with the following components:
   \item{mu0}{  
@@ -67,7 +64,5 @@
   }
 }
 
-\examples{
-}
 
 

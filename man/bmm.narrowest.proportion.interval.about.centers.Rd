@@ -49,9 +49,6 @@
    }
 }
 
-\details{
-}
-
 \value{
   a list with values lb and ub, where each are D x N.c
   matrices holding the respective lower or upper bounds of the intervals,
@@ -59,8 +56,6 @@
   from the posterior distribution
 }
 
-\examples{
-}
 
 
 

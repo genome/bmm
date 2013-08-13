@@ -63,8 +63,6 @@
     
 }
 
-\details{}
-
 \value{
   A list with the following entries:
 
@@ -125,5 +123,4 @@
        clusters/components determined by kmeans
   }
 }
-\examples{}
 

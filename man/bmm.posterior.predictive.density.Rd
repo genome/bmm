@@ -51,14 +51,8 @@
    }
 }
 
-\details{
-}
-
 \value{
   the posterior preditive density at x summed across all components
-}
-
-\examples{
 }
 
 
