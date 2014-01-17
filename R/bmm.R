@@ -2696,7 +2696,9 @@ gaussian.bmm.fixed.num.components <- function(X, N.c, r, m, alpha, beta, nu, W, 
 
     if ( verbose == TRUE) { print(new.E.pi) }
     E.pi <- new.E.pi
-  
+
+    iteration <- iteration + 1
+    
     # For efficiency, don't calculate bound on each step
     if ( ( iteration %% 10 ) != 0 ) { next }
     
