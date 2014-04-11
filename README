@@ -5,11 +5,21 @@ An R package that uses a variational Bayesian approach for fitting a mixture of 
 
 Installation instructions
 --------------------------------
+The easy way:
 
-$ git clone git@github.com:genome/bmm.git
-$ cd bmm/
-$ R CMD build bmm
-$ R CMD INSTALL bmm_0.3.0.tar.gz
+    #install devtools if you don't have it already
+    install.packages("devtools") 
+    library(devtools)
+    install_github("genome/bmm")
+
+Or build it by hand:
+
+    #make sure you have all the dependencies first
+    $ git clone git@github.com:genome/bmm.git
+    $ cd bmm/
+    $ R CMD build bmm
+    $ R CMD INSTALL bmm_0.3.1.tar.gz
+
 
 Usage
 ---------------------------------
