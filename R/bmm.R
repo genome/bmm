@@ -643,7 +643,7 @@ init.bmm.parameters <- function(X, N.c, mu0, alpha0, nu0, beta0, c0, verbose=0)
   #kmeans.centers <- kmeans.centers[do.call(order, lapply(1:ncol(kmeans.centers), function(i) kmeans.centers[, i])), ]
   if(verbose){
     cat("kmeans initialization:\n")
-    print(kmeans.centers)
+    write.table(kmeans.centers, row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
   }
   # This logic (should) follow that of Fan in DMM.m in initializing
   # the model.
@@ -2056,13 +2056,13 @@ init.binomial.bmm.parameters <- function(successes, total.trials, N.c, a0, b0, a
   kmeans.clusters <- kmeans.out$cluster
   kmeans.centers <- kmeans.out$centers
 
-  # Sort the centers to ease comparison across runs.  No we sort the
+  # Sort the centers to ease comparison across runs.  No we sort thes
   # clustered results.
   # Besides, be careful!  This upset the relationship between kmeans.clusters
   # and kmeans.centers!  #kmeans.centers <- kmeans.centers[do.call(order, lapply(1:ncol(kmeans.centers), function(i) kmeans.centers[, i])), ]
   if(verbose){
     cat("kmeans initialization:\n")
-    print(kmeans.centers)
+    write.table(kmeans.centers, row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
   }
 
   r <- matrix(data=0, nrow=N, ncol=N.c)
@@ -3013,6 +3013,7 @@ init.gaussian.bmm.hyperparameters <- function(X, N.c)
   # since precision Lambda = Sigma^{-1}.
   # Also, set a desired variance on the sigma.
   effective.precision <- 1000
+  #effective.precision <- 10000  
   effective.sigma <- sqrt(1/effective.precision)
   
   delta <- 10^-7
@@ -3107,7 +3108,7 @@ init.gaussian.bmm.parameters <- function(X, N.c, m0, alpha0, beta0, nu0, W0, ver
   #kmeans.centers <- kmeans.centers[do.call(order, lapply(1:ncol(kmeans.centers), function(i) kmeans.centers[, i])), ]
   if(verbose){
     cat("kmeans initialization:\n")
-    print(kmeans.centers)
+    write.table(kmeans.centers, row.names=FALSE, col.names=TRUE, sep="\t", quote=FALSE)
   }
   r <- matrix(data=0, nrow=N, ncol=N.c)
   for(i in 1:N) {
