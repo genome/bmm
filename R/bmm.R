@@ -3404,10 +3404,10 @@ gaussian.bmm.posterior.predictive.density <- function(x, m, alpha, beta, nu, W, 
 ## ggplot object displaying the clustered data and "1-sigma" contour intervals
 ## for the standard error of the mean.
 
-gaussian.bmm.plot.1d <- function(X, m, alpha, beta, nu, W, r, title, xlab, ylab)
+gaussian.bmm.plot.1d <- function(X, m, alpha, beta, nu, W, r, title, xlab, ylab, bin.width = 0.025)
 {
-  bin.width <- .025
   N.c <- dim(m)[1]
+  D <- dim(X)[2]
 
   proportions <- data.frame(x=X[,1], row.names=NULL, stringsAsFactors=NULL)
   
@@ -3415,7 +3415,8 @@ gaussian.bmm.plot.1d <- function(X, m, alpha, beta, nu, W, r, title, xlab, ylab)
   n <- 1000
   y <- rep.int(0, n)
   # Don't evaluate at x=0 or x=1, which will blow up
-  x <- seq(1/n, 1-(1/n), length=n)
+  #x <- seq(1/n, 1-(1/n), length=n)
+  x <- seq(min(proportions$x), max(proportions$x), length=n)
   ym <- matrix(data=0,nrow=N.c,ncol=n)
   num.iterations <- 1000
 
@@ -3455,7 +3456,8 @@ gaussian.bmm.plot.1d <- function(X, m, alpha, beta, nu, W, r, title, xlab, ylab)
 
   num.breaks <- ceiling(1/bin.width) + 1
   breaks <- unlist(lapply(0:(num.breaks-1), function(x) x/(num.breaks-1)))
-  g <- g + geom_histogram(data=proportions, mapping=aes(x), fill="white", colour="black", breaks=breaks)
+  #g <- g + geom_histogram(data=proportions, mapping=aes(x), fill="white", colour="black", breaks=breaks)
+  g <- g + geom_histogram(data=proportions, mapping=aes(x), fill="white", colour="black")
 
   tmp <- print(g)
   max.density <- max(tmp[["data"]][[1]]$ymax)
@@ -3476,8 +3478,10 @@ gaussian.bmm.plot.1d <- function(X, m, alpha, beta, nu, W, r, title, xlab, ylab)
 
   g <- g + stat_function(data = limits, fun=f, mapping=aes(x))
   
-  xmin <- -0.05
-  xmax <-  1.05
+  #xmin <- -0.05
+  #xmax <-  1.05
+  xmin <- min(proportions$x)
+  xmax <- max(proportions$x)
 
   g <- g + coord_cartesian(ylim=c(0, max.density*1.1), xlim=c(xmin,xmax))
 
