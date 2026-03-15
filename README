@@ -8,8 +8,8 @@ Installation instructions
 The easy way:
 
     #install devtools if you don't have it already
-    install.packages("devtools") 
-    library(devtools)
+    install.packages("remotes") 
+    library(remotes)
     install_github("genome/bmm")
 
 Or build it by hand:
