@@ -1,5 +1,9 @@
 suppressPackageStartupMessages(library(ggplot2))
 
+# Internal replacement for NORMT3::erf() using base R identity
+# erf(x) = 2 * pnorm(x * sqrt(2)) - 1  (exact for real x)
+erf <- function(x) 2 * pnorm(x * sqrt(2)) - 1
+
 ####--------------------------------------------------------------
 ## bmm.fixed.num.components: Use a variational Bayesian approach to fit 
 ## a mixture of Beta distributions to proportion data, without dropping
@@ -1376,7 +1380,6 @@ bmm.plot.2d <- function(X, mu, alpha, nu, beta, E.pi, r, title, xlab, ylab)
   N.c <- dim(mu)[2]
 
   # width = 1 std dev
-  suppressPackageStartupMessages(library("NORMT3")) # for erf
   width <- as.double(erf(1/sqrt(2)))  
  
   width <- sqrt(width)
@@ -2326,7 +2329,6 @@ binomial.bmm.plot.2d <- function(successes, total.trials, a, b, r, title, xlab, 
   X <- successes / total.trials
 
   # width = 1 std dev
-  suppressPackageStartupMessages(library("NORMT3")) # for erf
   width <- as.double(erf(1/sqrt(2)))  
  
   width <- sqrt(width)
@@ -3529,7 +3531,6 @@ gaussian.bmm.plot.2d <- function(X, m, alpha, beta, nu, W, r, title, xlab, ylab)
   print(N.c)
   
   # width = 1 std dev
-  suppressPackageStartupMessages(library("NORMT3")) # for erf
   width <- as.double(erf(1/sqrt(2)))  
  
   # width <- sqrt(width)
